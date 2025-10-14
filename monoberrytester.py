@@ -1,9 +1,8 @@
-import sys, logging, requests, serial, time
+import sys, logging, requests, serial
 from enum import Enum, auto
 from datetime import datetime
 
-from PyQt5.QtCore import Qt, QObject, QTimer, QSize, QThread, pyqtSignal
-from PyQt5.QtGui import QFont
+from PyQt5.QtCore import Qt, QObject, QThread, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QHBoxLayout, QVBoxLayout, QGroupBox,
     QWidget, QTextEdit, QLineEdit, QLabel, QPushButton
@@ -32,7 +31,7 @@ class Texts:
     ui_label_qr_group                   = "Data matrix QR codes"
     log_info_first_code_scanned         = "First code scanned: "
     log_info_second_code_scanned        = "Second code scanned: "
-    log_error_wrong_state_to_start_from = "Can not start form state: "
+    log_error_wrong_state_to_start_from = "Can not start from state: "
     log_error_more_than_2_qr_scanned    = "More than 2 dm qr codes scanned somehow!"
     log_info_server_response            = "Recevied response from server:\n"
     log_info_server_error               = "Recevied ERROR from server:\n"
@@ -82,6 +81,7 @@ class LoggingService(QObject):
             format      = '%(asctime)s - %(message)s'
         )
 
+# TODO: replace with actual code when I get the barcode scanner
 class ScannerService(QObject):
     code_received = pyqtSignal(str)
 
@@ -120,9 +120,30 @@ class ServerClient(QThread):
         except Exception as e:
             self.logger.error(str(e))
 
-class SerialService(QObject):
-    def __init__(self):
+# For local testing:
+#   1. Create 2 PTYs: socat -d -d pty,raw,echo=0 pty,raw,echo=0
+#   2. Run this app with the first PTY as the argument
+#   3. Pipe some text (file) to the second PTY: 
+class SerialService(QThread):
+    connected   = pyqtSignal()
+    failed      = pyqtSignal(str)
+
+    def __init__(self, port, baudrate, timeout):
         super().__init__()
+        self.port = port
+        self.baudrate = baudrate
+        self.timeout = timeout
+
+    def run(self):
+        try:
+            self.serial = serial.Serial(self.port, self.baudrate, timeout = self.timeout)
+            self.connected.emit()
+        except Exception as e:
+            self.failed.emit(str(e))
+
+    def stop(self):
+        if self.serial and self.serial.is_open:
+            self.serial.close()
 
 class Workflow(QObject):
     state_changed = pyqtSignal()
@@ -152,6 +173,8 @@ class Workflow(QObject):
         # Connect to external services signals
         self.scanner.code_received.connect(self.__handle_scanned_codes)
         self.server_client.response_received.connect(self.__handle_server_response)
+        self.serial.connected.connect(self.__handle_serial_connected)
+        self.serial.failed.connect(self.__handle_serial_failed)
 
     # Reset back to idle state in order to do retry upon failure
     def reset(self):
@@ -170,7 +193,7 @@ class Workflow(QObject):
     # Test UART connection to the board
     def connect_to_uart(self):
         self.__change_state(State.CONNECTING_TO_UART)
-        self.scan_qr_codes()
+        self.serial.run()
 
     # Prompt user to scan two data matrix codes
     def scan_qr_codes(self):
@@ -224,6 +247,14 @@ class Workflow(QObject):
             self.done()
         else:
             self.logger.error(Texts.log_info_server_error + response)
+
+    def __handle_serial_connected(self):
+        self.logger.info("Serial connected")
+        self.scan_qr_codes()
+
+    def __handle_serial_failed(self):
+        # TODO: update UI (status label) accordingly
+        self.logger.error("Serial connection FAILED!")
 
 class UI(QWidget):
     def __init__(self):
@@ -309,7 +340,7 @@ class Main(QMainWindow):
 
         # Init services
         self.logger         = LoggingService(self.ui.log_text_edit)
-        self.serial         = SerialService()
+        self.serial         = SerialService(SERIAL_PORT, 115200, 1)
         self.scanner        = ScannerService()
         self.server_client  = ServerClient(self.logger)
         self.workflow       = Workflow(self.logger, self.serial, self.scanner, self.server_client)
@@ -327,7 +358,7 @@ class Main(QMainWindow):
             State.FETCHING_SERIAL_AND_MACS: self.__update_ui_fetching_serial_and_macs,
             State.DONE:                     self.__update_ui_done
         }
-    
+
     def __update_scanned_codes(self, codes):
         if len(codes) == 1:
             self.ui.update_status(Texts.status_scan_qr_bottom)
@@ -365,10 +396,8 @@ class Main(QMainWindow):
 
 app = QApplication(sys.argv)
 
-if len(sys.argv) > 1:
-    SERVER_ENDPOINT = sys.argv[1]
-else:
-    SERVER_ENDPOINT = "http://localhost:8000"
+SERVER_ENDPOINT = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000"
+SERIAL_PORT = sys.argv[2] if len(sys.argv) > 2 else "/dev/ttys010"
 
 window = Main()
 window.show()
