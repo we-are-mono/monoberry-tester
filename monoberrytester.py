@@ -5,7 +5,7 @@ from datetime import datetime
 from PyQt5.QtCore import Qt, QObject, QThread, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QHBoxLayout, QVBoxLayout, QGroupBox,
-    QWidget, QTextEdit, QLineEdit, QLabel, QPushButton
+    QWidget, QFrame, QTextEdit, QLineEdit, QLabel, QPushButton
 )
 
 TEST_CASES_DATA = {
@@ -289,6 +289,33 @@ class Workflow(QObject):
             self.logger.info("Serial working. Data was received: " + data)
             self.__change_state(State.DONE)
 
+class TestCaseWidget(QWidget):
+    def __init__(self, description):
+        super().__init__()
+        self.indicator = QLabel()
+        self.indicator.setFixedSize(16, 16)
+        self.label = QLabel(description)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 0, 8, 0)
+        layout.setSpacing(16)
+        layout.addWidget(self.indicator)
+        layout.addWidget(self.label)
+
+        self.set_idle()
+
+    def set_idle(self):
+        self.indicator.setStyleSheet("background-color: gray;")
+
+    def set_running(self):
+        self.indicator.setStyleSheet("background-color: yellow;")
+
+    def set_success(self):
+        self.indicator.setStyleSheet("background-color: green;")
+
+    def set_failure(self):
+        self.indicator.setStyleSheet("background-color: red;")
+
 class UI(QWidget):
     def __init__(self):
         super().__init__()
@@ -322,6 +349,12 @@ class UI(QWidget):
         left_panel.addStretch()
         left_panel.addWidget(self.log_text_edit)
         left_panel.addWidget(self.start_btn)
+
+        right_panel.addWidget(TestCaseWidget("Initialize database"))
+        right_panel.addWidget(TestCaseWidget("Plug in flux capacitor"))
+        right_panel.addWidget(TestCaseWidget("Calibrate the quantum brakes"))
+        right_panel.addStretch()
+
         layout.addLayout(left_panel, stretch=1)
         layout.addLayout(right_panel, stretch=2)
         self.setLayout(layout)
