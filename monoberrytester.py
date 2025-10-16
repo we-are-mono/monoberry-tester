@@ -54,6 +54,7 @@ class State(Enum):
     CONNECTING_TO_UART          = auto()
     SCANNING_QR_CODES           = auto()
     FETCHING_SERIAL_AND_MACS    = auto()
+    CONNECTING_CABLES           = auto()
     DONE                        = auto()
     FAILED                      = auto()
 
@@ -130,26 +131,38 @@ class ServerClient(QThread):
 class SerialService(QThread):
     connected   = pyqtSignal()
     failed      = pyqtSignal(str)
+    received_data = pyqtSignal(str)
 
-    def __init__(self, port, baudrate, timeout):
+    def __init__(self, port, baudrate):
         super().__init__()
+        self.timeout = 0.2
         self.port = port
         self.baudrate = baudrate
-        self.timeout = timeout
-        self.serial = None
+        self.running = False
 
     def run(self):
         try:
-            if not self.serial:
-                self.serial = serial.Serial(self.port, self.baudrate, timeout = self.timeout)
-            if self.serial.is_open:
-                self.connected.emit()
+            self.serial = serial.Serial(self.port, self.baudrate, timeout = self.timeout)
+            self.connected.emit()
+            self.running = True
+
+            while(self.running):
+                line = self.serial.readline().decode().strip()
+                if line:
+                    self.received_data.emit(line)
+                    print("S> " + line)
+                self.msleep(10)
+
         except Exception as e:
             self.failed.emit(str(e))
+        finally:
+            self.stop()
 
     def stop(self):
         if self.serial and self.serial.is_open:
             self.serial.close()
+        self.running = False
+        self.wait()
 
 class Workflow(QObject):
     state_changed = pyqtSignal(dict)
@@ -181,6 +194,7 @@ class Workflow(QObject):
         self.server_client.response_received.connect(self.__handle_server_response)
         self.serial.connected.connect(self.__handle_serial_connected)
         self.serial.failed.connect(self.__handle_serial_failed)
+        self.serial.received_data.connect(self.__handle_serial_received_data)
 
     # Reset back to idle state in order to do retry upon failure
     def reset(self):
@@ -199,7 +213,7 @@ class Workflow(QObject):
     # Test UART connection to the board
     def connect_to_uart(self):
         self.__change_state(State.CONNECTING_TO_UART)
-        self.serial.run()
+        self.serial.start()
 
     # Prompt user to scan two data matrix codes
     def scan_qr_codes(self):
@@ -212,6 +226,11 @@ class Workflow(QObject):
         self.__change_state(State.FETCHING_SERIAL_AND_MACS)
         self.server_client.set_codes(self.scanned_codes)
         self.server_client.start()
+
+    # Prompt user to connect the rest of the cables
+    def connect_cables(self):
+        self.__change_state(State.CONNECTING_CABLES)
+        # Capture UART text until your get something then change state?
 
     # Done, all tests have successfull passed and
     # the board is fully functional (to our knowledge)
@@ -250,7 +269,7 @@ class Workflow(QObject):
             r = response.split()
             self.serial_num = r[0]
             self.mac_addresses = r[1:]
-            self.done()
+            self.connect_cables()
         else:
             self.logger.error(Texts.log_info_server_error + response)
 
@@ -264,6 +283,11 @@ class Workflow(QObject):
             "status": Texts.status_conn_to_uart_failed,
             "err_msg": err_msg
         })
+
+    def __handle_serial_received_data(self, data: str):
+        if self.state == State.CONNECTING_CABLES:
+            self.logger.info("Serial working. Data was received: " + data)
+            self.__change_state(State.DONE)
 
 class UI(QWidget):
     def __init__(self):
@@ -323,6 +347,10 @@ class UI(QWidget):
     def set_dm_qr_bottom(self, code: str):
         self.dm_qr_line_edit_bottom.setText(code)
 
+    def clear_qr_codes(self):
+        self.dm_qr_line_edit_top.setText("")
+        self.dm_qr_line_edit_bottom.setText("")
+
     def __create_dm_qr_group(self):
         self.dm_qr_group = QGroupBox(Texts.ui_label_qr_group)
         self.dm_gr_group_layout = QVBoxLayout()
@@ -349,7 +377,7 @@ class Main(QMainWindow):
 
         # Init services
         self.logger         = LoggingService(self.ui.log_text_edit)
-        self.serial         = SerialService(SERIAL_PORT, 115200, 1)
+        self.serial         = SerialService(SERIAL_PORT, 115200)
         self.scanner        = ScannerService()
         self.server_client  = ServerClient(self.logger)
         self.workflow       = Workflow(self.logger, self.serial, self.scanner, self.server_client)
@@ -365,6 +393,7 @@ class Main(QMainWindow):
             State.CONNECTING_TO_UART:       self.__update_ui_connecting_to_uart,
             State.SCANNING_QR_CODES:        self.__update_ui_scanning_qr_codes,
             State.FETCHING_SERIAL_AND_MACS: self.__update_ui_fetching_serial_and_macs,
+            State.CONNECTING_CABLES:        self.__update_ui_connecting_cables,
             State.DONE:                     self.__update_ui_done,
             State.FAILED:                   self.__update_ui_failed
         }
@@ -377,11 +406,13 @@ class Main(QMainWindow):
             self.ui.set_dm_qr_bottom(codes[1])
 
     def __update_ui(self, msg):
-        handler = self.state_handlers.get(self.workflow.state)
+        state = self.workflow.state
+        handler = self.state_handlers.get(state)
         handler(msg)
 
     def __update_ui_idle(self, msg):
         self.ui.update_status(Texts.status_ready_to_start)
+        self.ui.clear_qr_codes()
         self.ui.start_btn_enable()
         self.ui.reset_btn_disable()
 
@@ -397,6 +428,9 @@ class Main(QMainWindow):
 
     def __update_ui_fetching_serial_and_macs(self, msg):
         self.ui.update_status(Texts.status_get_ser_macs)
+
+    def __update_ui_connecting_cables(self, msg):
+        self.ui.update_status(Texts.status_connect_cables)
 
     def __update_ui_done(self, msg):
         self.ui.update_status(Texts.status_done)
