@@ -16,12 +16,12 @@ TEST_CASES_DATA = {
 
 class Texts:
     status_ready_to_start               = "Plug in UART cable and click START"
+    status_conn_to_uart                 = "Connecting to UART"
+    status_conn_to_uart_failed          = "Connection to UART failed!"
     status_scan_qr_top                  = "Scan the TOP data matrix QR code"
     status_scan_qr_bottom               = "Scan the BOTTOM data matrix QR code"
     status_get_ser_macs                 = "Fetching serial and MACs"
     status_connect_cables               = "Connect cables"
-    status_conn_to_uart                 = "Connecting to UART"
-    status_uart_error                   = "UART error!"
     status_done                         = "All tests successful!"
     ui_start_btn_label_start            = "Start"
     ui_start_btn_label_cont             = "Continue"
@@ -29,6 +29,8 @@ class Texts:
     ui_label_top_qr                     = "Top data matrix (QR code)"
     ui_label_bottom_qr                  = "Top data matrix (QR code)"
     ui_label_qr_group                   = "Data matrix QR codes"
+    log_info_uart_connected             = "Connected to UART"
+    log_error_uart_failed               = "UART connection FAILED: "
     log_info_first_code_scanned         = "First code scanned: "
     log_info_second_code_scanned        = "Second code scanned: "
     log_error_wrong_state_to_start_from = "Can not start from state: "
@@ -53,6 +55,7 @@ class State(Enum):
     SCANNING_QR_CODES           = auto()
     FETCHING_SERIAL_AND_MACS    = auto()
     DONE                        = auto()
+    FAILED                      = auto()
 
 # Add Log class that adds log statements to the text field
 # and writes/appends them also to a log file
@@ -64,11 +67,11 @@ class LoggingService(QObject):
         self.__init_logging(self.filename)
 
     def info(self, text):
-        self.text_widget.append("I: " + text)
+        self.text_widget.append("INFO > " + text)
         logging.info(text)
 
     def error(self, text):
-        self.text_widget.append("E: " + text)
+        self.text_widget.append("ERROR > " + text)
         logging.error(text)
 
     def __generate_log_filename(self):
@@ -97,7 +100,7 @@ class ScannerService(QObject):
             self.buffer += text
 
 # One liner server with 1s delay for testing:
-#   ncat -lk 8000 -c 'sleep 1; echo "HTTP/1.1 200 OK\r\n\r\nS3R14LNUM83R\n02:00:00:00:00:01\n02:00:00:00:00:02\n02:00:00:00:00:03\n02:00:00:00:00:04\n02:00:00:00:00:05\n"'
+#   ncat -lk 8000 -c 'sleep 1; echo "HTTP/1.1 200 OK\r\n\r\nS3R14LNUM83R\n02:00:00:00:00:01\n02:00:00:00:00:02\n02:00:00:00:00:03\n02:00:00:00:00:04\n02:00:00:00:00:05"'
 class ServerClient(QThread):
     response_received = pyqtSignal(bool, str)
 
@@ -121,9 +124,9 @@ class ServerClient(QThread):
             self.logger.error(str(e))
 
 # For local testing:
-#   1. Create 2 PTYs: socat -d -d pty,raw,echo=0 pty,raw,echo=0
-#   2. Run this app with the first PTY as the argument
-#   3. Pipe some text (file) to the second PTY: 
+#   1. Create 2 PTYs: socat -d -d pty,raw,echo=0,link=/tmp/ttyMBT01 pty,raw,echo=0,link=/tmp/ttyMBT02
+#   2. Run this app with the first TTY as the argument
+#   3. Pipe some text (file) to the second TTY:
 class SerialService(QThread):
     connected   = pyqtSignal()
     failed      = pyqtSignal(str)
@@ -133,11 +136,14 @@ class SerialService(QThread):
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout
+        self.serial = None
 
     def run(self):
         try:
-            self.serial = serial.Serial(self.port, self.baudrate, timeout = self.timeout)
-            self.connected.emit()
+            if not self.serial:
+                self.serial = serial.Serial(self.port, self.baudrate, timeout = self.timeout)
+            if self.serial.is_open:
+                self.connected.emit()
         except Exception as e:
             self.failed.emit(str(e))
 
@@ -146,7 +152,7 @@ class SerialService(QThread):
             self.serial.close()
 
 class Workflow(QObject):
-    state_changed = pyqtSignal()
+    state_changed = pyqtSignal(dict)
     code_scanned = pyqtSignal(list)
 
     def __init__(
@@ -161,7 +167,7 @@ class Workflow(QObject):
         # State
         self.state              = State.IDLE
         self.scanned_codes      = []
-        self.serial             = None
+        self.serial_num         = None
         self.mac_addresses      = []
 
         # Services
@@ -220,9 +226,9 @@ class Workflow(QObject):
             self.scanner.handle_input(event.key(), event.text())
 
     # Helper function to make sure state_changed is emited also on state change
-    def __change_state(self, state):
+    def __change_state(self, state, msgs = {}):
         self.state = state
-        self.state_changed.emit()
+        self.state_changed.emit(msgs)
 
     # Called upon successfully receiving a code from the scanner
     def __handle_scanned_codes(self, code):
@@ -242,19 +248,22 @@ class Workflow(QObject):
         if success:
             self.logger.info(Texts.log_info_server_response + response)
             r = response.split()
-            self.serial = r[0]
+            self.serial_num = r[0]
             self.mac_addresses = r[1:]
             self.done()
         else:
             self.logger.error(Texts.log_info_server_error + response)
 
     def __handle_serial_connected(self):
-        self.logger.info("Serial connected")
+        self.logger.info(Texts.log_info_uart_connected)
         self.scan_qr_codes()
 
-    def __handle_serial_failed(self):
-        # TODO: update UI (status label) accordingly
-        self.logger.error("Serial connection FAILED!")
+    def __handle_serial_failed(self, err_msg):
+        self.logger.error(Texts.log_error_uart_failed + err_msg)
+        self.__change_state(State.FAILED, {
+            "status": Texts.status_conn_to_uart_failed,
+            "err_msg": err_msg
+        })
 
 class UI(QWidget):
     def __init__(self):
@@ -356,7 +365,8 @@ class Main(QMainWindow):
             State.CONNECTING_TO_UART:       self.__update_ui_connecting_to_uart,
             State.SCANNING_QR_CODES:        self.__update_ui_scanning_qr_codes,
             State.FETCHING_SERIAL_AND_MACS: self.__update_ui_fetching_serial_and_macs,
-            State.DONE:                     self.__update_ui_done
+            State.DONE:                     self.__update_ui_done,
+            State.FAILED:                   self.__update_ui_failed
         }
 
     def __update_scanned_codes(self, codes):
@@ -366,30 +376,33 @@ class Main(QMainWindow):
         elif len(codes) == 2:
             self.ui.set_dm_qr_bottom(codes[1])
 
-    def __update_ui(self):
+    def __update_ui(self, msg):
         handler = self.state_handlers.get(self.workflow.state)
-        handler()
+        handler(msg)
 
-    def __update_ui_idle(self):
+    def __update_ui_idle(self, msg):
         self.ui.update_status(Texts.status_ready_to_start)
         self.ui.start_btn_enable()
         self.ui.reset_btn_disable()
 
-    def __update_ui_started(self):
+    def __update_ui_started(self, msg):
         self.ui.start_btn_disable()
         self.ui.reset_btn_enable()
 
-    def __update_ui_connecting_to_uart(self):
+    def __update_ui_connecting_to_uart(self, msg):
         self.ui.update_status(Texts.status_conn_to_uart)
 
-    def __update_ui_scanning_qr_codes(self):
+    def __update_ui_scanning_qr_codes(self, msg):
         self.ui.update_status(Texts.status_scan_qr_top)
 
-    def __update_ui_fetching_serial_and_macs(self):
+    def __update_ui_fetching_serial_and_macs(self, msg):
         self.ui.update_status(Texts.status_get_ser_macs)
 
-    def __update_ui_done(self):
+    def __update_ui_done(self, msg):
         self.ui.update_status(Texts.status_done)
+    
+    def __update_ui_failed(self, msgs):
+        self.ui.update_status(msgs["status"])
 
     def keyPressEvent(self, event):
         self.workflow.key_pressed(event)
@@ -397,7 +410,7 @@ class Main(QMainWindow):
 app = QApplication(sys.argv)
 
 SERVER_ENDPOINT = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000"
-SERIAL_PORT = sys.argv[2] if len(sys.argv) > 2 else "/dev/ttys010"
+SERIAL_PORT = sys.argv[2] if len(sys.argv) > 2 else "/tmp/ttyMBT01"
 
 window = Main()
 window.show()
