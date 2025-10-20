@@ -1,3 +1,4 @@
+# pylint: disable=too-many-instance-attributes
 # -*- coding: utf-8 -*-
 """
 This is an application that will be running on a Raspberry Pi that will act
@@ -90,12 +91,12 @@ class LoggingService(QObject):
             format      = '%(asctime)s - %(message)s'
         )
 
+# TODO: replace with actual code when I get the barcode scanner
 class ScannerService(QObject):
     """Class that handles communication with the USB barcode scanner
-    TODO: replace with actual code when I get the barcode scanner
     
     Attributes:
-        code_received (pyqtSignal): Signal for when a code is scanned
+        code_received (pyqtSignal): Signals when a code is scanned
     """
 
     code_received = pyqtSignal(str)
@@ -113,12 +114,18 @@ class ScannerService(QObject):
             self.buffer += text
 
 class ServerClient(QThread):
+    # pylint: disable=line-too-long
     """HTTP Client to call our server
 
     Args:
         server_endpoint (str): URL base for our server endpoint
         logging_service (LoggingService): Service for logging
+    
+    Server one liner for testing locally:
+        ncat -lk 8000 -c 'sleep 1; echo "HTTP/1.1 200 OK\r\n\r\nS3R14LNUM83R\n02:00:00:00:00:01\n02:00:00:00:00:02\n02:00:00:00:00:03\n02:00:00:00:00:04\n02:00:00:00:00:05"'
     """
+    # pylint: enable=line-too-long
+
     response_received = pyqtSignal(bool, str)
 
     def __init__(self, server_endpoint, logging_service: LoggingService):
@@ -147,24 +154,38 @@ class ServerClient(QThread):
         except Exception as e:
             self.logger.error(str(e))
 
-# For local testing:
-#   1. Create 2 PTYs: socat -d -d pty,raw,echo=0,link=/tmp/ttyMBT01 pty,raw,echo=0,link=/tmp/ttyMBT02
-#   2. Run this app with the first TTY as the argument
-#   3. Pipe some text (file) to the second TTY:
 class SerialService(QThread):
+    """UART client to comminucate with our BUTT (board under test tool)
+
+    Attributes:
+        connected (pyqtSignal): Signals when UART is successfully connected
+        failed (pyqtSignal): Signals when there's an error connecting to UART
+        received_data (pyqtSignal): Signals when data is received via UART
+
+    Args:
+        port (str): Path to device (TTY) on disk to connect to
+
+    For local testing:
+        1. Create 2 PTYs:
+            socat -d -d pty,raw,echo=0,link=/tmp/ttyMBT01 pty,raw,echo=0,link=/tmp/ttyMBT02
+        2. Run this app with the first TTY as the argument
+        3. Pipe some text (file) to the second TTY:
+    """
+
     connected   = pyqtSignal()
     failed      = pyqtSignal(str)
     received_data = pyqtSignal(str)
 
-    def __init__(self, port, baudrate):
+    def __init__(self, port):
         super().__init__()
         self.timeout = 0.2
         self.port = port
-        self.baudrate = baudrate
+        self.baudrate = 115200
         self.running = False
         self.serial = None
 
     def run(self):
+        """Connects to UART and starts reading data"""
         try:
             self.serial = serial.Serial(self.port, self.baudrate, timeout = self.timeout)
             self.connected.emit()
@@ -183,12 +204,28 @@ class SerialService(QThread):
             self.stop()
 
     def stop(self):
+        """Stops the connection and pauses the thread"""
         if self.serial and self.serial.is_open:
             self.serial.close()
         self.running = False
         self.wait()
 
 class Workflow(QObject):
+    """The class capturing the 'business' logic.
+    
+    Attributes:
+        state_changed (pyqtSignal): Signals the application state has changed
+        and provides data about it
+        code_scanned (pyqtSignal): Signals that a QR code was scanned and 
+        data was received
+    
+    Args:
+        logging_service (LoggingService): Service for logging
+        serial_service (SerialService): Service to comminucate via UART
+        scanner_service (ScannerService): Service to received scanned QR codes
+        server_client (ServerClient): Service to communicate with our server
+    """
+
     state_changed = pyqtSignal(dict)
     code_scanned = pyqtSignal(list)
 
@@ -220,13 +257,13 @@ class Workflow(QObject):
         self.serial.failed.connect(self.__handle_serial_failed)
         self.serial.received_data.connect(self.__handle_serial_received_data)
 
-    # Reset back to idle state in order to do retry upon failure
     def reset(self):
+        """Resets back to idle state in order to do retry upon failure"""
         self.scanned_codes = []
         self.__change_state(State.IDLE)
 
-    # Entry point into testing
     def start(self):
+        """Entry point to start testing"""
         if self.state != State.IDLE:
             self.logger.info(texts.LOG_WRONG_STATE_TO_START_FROM + self.state)
             return
@@ -234,47 +271,49 @@ class Workflow(QObject):
         self.__change_state(State.STARTED)
         self.connect_to_uart()
 
-    # Test UART connection to the board
     def connect_to_uart(self):
+        """Tests UART connection to the board"""
         self.__change_state(State.CONNECTING_TO_UART)
         self.serial.start()
 
-    # Prompt user to scan two data matrix codes
     def scan_qr_codes(self):
+        """Prompts user to scan two data matrix codes
+        
+        Continues in __handle_scanned_codes method"""
         self.__change_state(State.SCANNING_QR_CODES)
-        # Scanned codes are handled in __handle_scanner_codes
 
-    # Connect to our server to fetch serial and MAC addresses
-    # based on the provided data matrix QR codes
     def fetch_serial_and_macs(self):
+        """Connect to our server to fetch serial and MAC addresses
+        based on the provided data matrix QR codes
+        
+        Continues in __handle_server_response method"""
         self.__change_state(State.FETCHING_SERIAL_AND_MACS)
         self.server_client.set_codes(self.scanned_codes)
         self.server_client.start()
 
-    # Prompt user to connect the rest of the cables
     def connect_cables(self):
+        """Prompts user to connect the rest of the cables"""
         self.__change_state(State.CONNECTING_CABLES)
-        # Capture UART text until your get something then change state?
 
-    # Done, all tests have successfull passed and
-    # the board is fully functional (to our knowledge)
     def done(self):
+        """Done, all tests have successfull passed and the board is
+        fully functional (according to our knowledge)"""
         self.__change_state(State.DONE)
         self.logger.info(texts.LOG_INFO_DONE)
 
-    # Handler for all key presses. But it only forwards it to
-    # scaner service if it is at the scanning step
     def key_pressed(self, event):
+        """Handler for all key presses.
+        But it only forwards to scanner service if scanning QR codes state"""
         if self.state == State.SCANNING_QR_CODES:
             self.scanner.handle_input(event.key(), event.text())
 
-    # Helper function to make sure state_changed is emited also on state change
     def __change_state(self, state, msgs = {}):
+        """Helper to make sure state_changed is emited also on state change"""
         self.state = state
         self.state_changed.emit(msgs)
 
-    # Called upon successfully receiving a code from the scanner
     def __handle_scanned_codes(self, code):
+        """Called upon successfully receiving a code from the scanner"""
         self.scanned_codes.append(code)
         self.code_scanned.emit(self.scanned_codes)
 
@@ -286,8 +325,8 @@ class Workflow(QObject):
         else:
             self.logger.error(texts.LOG_ERROR_MORE_THAN_2_QR_SCANNED)
 
-    # Called upon receiving a response from the server
     def __handle_server_response(self, success: bool, response: str):
+        """Called upon receiving a response from the server"""
         if success:
             self.logger.info(texts.LOG_INFO_SERVER_RESPONSE + response)
             r = response.split()
@@ -298,10 +337,12 @@ class Workflow(QObject):
             self.logger.error(texts.LOG_INFO_SERVER_ERROR + response)
 
     def __handle_serial_connected(self):
+        """Called on successful serial connection"""
         self.logger.info(texts.LOG_INFO_UART_CONNECTED)
         self.scan_qr_codes()
 
     def __handle_serial_failed(self, err_msg):
+        """Called on failed serial connection"""
         self.logger.error(texts.LOG_ERROR_UART_FAILED + err_msg)
         self.__change_state(State.FAILED, {
             "status": texts.STATUS_CONN_TO_UART_FAILED,
@@ -309,11 +350,17 @@ class Workflow(QObject):
         })
 
     def __handle_serial_received_data(self, data: str):
+        """Called when data is received via serial connection"""
         if self.state == State.CONNECTING_CABLES:
             self.logger.info("Serial working. Data was received: " + data)
             self.__change_state(State.DONE)
 
 class TestCaseWidget(QWidget):
+    """Class that represents a test case widget (a color indicator and text)
+    
+    Args:
+        description (str): Test case description
+    """
     def __init__(self, description):
         super().__init__()
         self.indicator = QLabel()
@@ -329,18 +376,24 @@ class TestCaseWidget(QWidget):
         self.set_idle()
 
     def set_idle(self):
+        """Mark it as idle (gray color)"""
         self.indicator.setStyleSheet("background-color: gray;")
 
     def set_running(self):
+        """Mark it as running (yellow color)"""
         self.indicator.setStyleSheet("background-color: yellow;")
 
     def set_success(self):
+        """Mark it as successful (green color)"""
         self.indicator.setStyleSheet("background-color: green;")
 
     def set_failure(self):
+        """Mark it as failed (red color)"""
         self.indicator.setStyleSheet("background-color: red;")
 
 class UI(QWidget):
+    """Class capturing all UI logic and operations"""
+
     def __init__(self):
         super().__init__()
         self.__init_ui()
@@ -396,18 +449,23 @@ class UI(QWidget):
         self.setLayout(layout)
 
     def start_btn_enable(self):
+        """Enables start button"""
         self.start_btn.setDisabled(False)
 
     def start_btn_disable(self):
+        """Disables start button"""
         self.start_btn.setDisabled(True)
 
     def reset_btn_enable(self):
+        """Enables reset button"""
         self.reset_btn.setDisabled(False)
 
     def reset_btn_disable(self):
+        """Disables reset button"""
         self.reset_btn.setDisabled(True)
 
     def update_status(self, text, err=False):
+        """Updates status label with text and error indicator: err"""
         self.label.setText(text)
 
         if err:
@@ -416,16 +474,25 @@ class UI(QWidget):
             self.label.setStyleSheet(styles.STATUS_NORMAL)
 
     def set_dm_qr_top(self, code: str):
+        """Updates top scanned QR text field"""
         self.dm_qr_line_edit_top.setText(code)
 
     def set_dm_qr_bottom(self, code: str):
+        """Updates bottom scanned QR text field"""
         self.dm_qr_line_edit_bottom.setText(code)
 
     def clear_qr_codes(self):
+        """Clears both QR codes text fields"""
         self.dm_qr_line_edit_top.setText("")
         self.dm_qr_line_edit_bottom.setText("")
 
 class Main(QMainWindow):
+    """Class representing PyQt5 window
+    
+    Args:
+        server_endpoint (str): Base url for our server endpoint
+        serial_port (str): Path to device (TTY) on disk to connect to
+    """
     def __init__(self, server_endpoint, serial_port):
         super().__init__()
 
@@ -436,7 +503,7 @@ class Main(QMainWindow):
 
         # Init services
         self.logger         = LoggingService(self.ui.log_text_edit)
-        self.serial         = SerialService(serial_port, 115200)
+        self.serial         = SerialService(serial_port)
         self.scanner        = ScannerService()
         self.server_client  = ServerClient(server_endpoint, self.logger)
         self.workflow       = Workflow(self.logger, self.serial, self.scanner, self.server_client)
@@ -458,6 +525,7 @@ class Main(QMainWindow):
         }
 
     def __update_scanned_codes(self, codes):
+        """Updates UI with both scanned codes"""
         if len(codes) == 1:
             self.ui.update_status(texts.STATUS_SCAN_QR_BOTTOM)
             self.ui.set_dm_qr_top(codes[0])
@@ -465,6 +533,7 @@ class Main(QMainWindow):
             self.ui.set_dm_qr_bottom(codes[1])
 
     def __update_ui(self, msgs):
+        """Generic method to update UI on state change"""
         state = self.workflow.state
         handler = self.state_handlers.get(state)
         if msgs:
@@ -473,37 +542,47 @@ class Main(QMainWindow):
             handler()
 
     def __update_ui_idle(self):
+        """Updates UI to reflect idle state"""
         self.ui.update_status(texts.STATUS_READY_TO_START)
         self.ui.clear_qr_codes()
         self.ui.start_btn_enable()
         self.ui.reset_btn_disable()
 
     def __update_ui_started(self):
+        """Updates UI to reflect started state"""
         self.ui.start_btn_disable()
         self.ui.reset_btn_enable()
 
     def __update_ui_connecting_to_uart(self):
+        """Updates UI to reflect connecting to UART state"""
         self.ui.update_status(texts.STATUS_CONN_TO_UART)
 
     def __update_ui_scanning_qr_codes(self):
+        """Updates UI to reflect scanning QR codes state"""
         self.ui.update_status(texts.STATUS_SCAN_QR_TOP)
 
     def __update_ui_fetching_serial_and_macs(self):
+        """Updates UI to reflect fetching serial and macs state"""
         self.ui.update_status(texts.STATUS_GET_SER_MACS)
 
     def __update_ui_connecting_cables(self):
+        """Updates UI to reflect connecting cables state"""
         self.ui.update_status(texts.STATUS_CONNECT_CABLES)
 
     def __update_ui_done(self):
+        """Updates UI to reflect done state"""
         self.ui.update_status(texts.STATUS_DONE)
 
     def __update_ui_failed(self, msgs):
+        """Updates UI to reflect failed state"""
         self.ui.update_status(msgs["status"], err = True)
 
-    def keyPressEvent(self, event):
+    def keyPressEvent(self, event): # pylint: disable=invalid-name
+        """Listens for key presses and forward them to workflow class"""
         self.workflow.key_pressed(event)
 
 def main():
+    """App entrypoint"""
     app = QApplication(sys.argv)
 
     server_endpoint = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000"
