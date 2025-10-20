@@ -93,8 +93,6 @@ class UI(QWidget):
 
         self.log_text_edit = QTextEdit()
         self.log_text_edit.setDisabled(True)
-        self.log_text_edit.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        self.log_text_edit.setDisabled(True)
 
         self.start_btn = QPushButton(texts.UI_START_BTN_LABEL_START)
         self.reset_btn.setEnabled(False)
