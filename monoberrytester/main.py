@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-"""MonoBerryTester
-
+"""
 This is an application that will be running on a Raspberry Pi that will act
 as a testing device for our boards (to start with). It will the following
 peripherals connected:
@@ -41,8 +40,8 @@ from PyQt5.QtWidgets import (
     QWidget, QTextEdit, QLineEdit, QLabel, QPushButton
 )
 
-from monoberrytester import texts
-from monoberrytester import styles
+import texts
+import styles
 
 TEST_CASES_DATA = {
     "uart_connect":             "UART: initial connection",
@@ -391,7 +390,7 @@ class UI(QWidget):
 
     def update_status(self, text, err=False):
         self.label.setText(text)
-        
+
         if err:
             self.label.setStyleSheet(styles.STATUS_ERROR)
         else:

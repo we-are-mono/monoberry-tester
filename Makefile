@@ -8,4 +8,4 @@ docs:
 	pydoc-markdown -p . > docs.md
 
 run:
-	python3 -m monoberrytester.main
+	python3 monoberrytester/main.py
