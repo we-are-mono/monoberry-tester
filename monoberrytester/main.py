@@ -1,9 +1,39 @@
+# -*- coding: utf-8 -*-
+"""MonoBerryTester
+
+This is an application that will be running on a Raspberry Pi that will act
+as a testing device for our boards (to start with). It will the following
+peripherals connected:
+- Power supply (duh...)
+- HDMI touch screen
+- USB barcode scanner
+- Ethernet cable if we can't use WiFi
+
+If it is run without command line  arguments it uses testing ones that are
+hardcoded (server endpoint, serial port). In production run it like this:
+    $ python example_google.py
+
+Section breaks are created by resuming unindented text. Section breaks
+are also implicitly created anytime a new section starts.
+
+Attributes:
+    TEST_CASES_DATA (dict): A dictionary of test cases to make widgets from and 
+    display in the right panel so they can be marked as successful/failed.
+
+    State(Enum): States that the application goes through. UI updates and other
+    things happen based on state transitions.
+
+Todo:
+    * Implement and test a real Scanner class when we get the USB barcode scanner
+"""
+
+from enum import Enum, auto
+from datetime import datetime
+
 import sys
 import logging
 import requests
 import serial
-from enum import Enum, auto
-from datetime import datetime
 
 from PyQt5.QtCore import Qt, QObject, QThread, pyqtSignal
 from PyQt5.QtWidgets import (
@@ -11,45 +41,14 @@ from PyQt5.QtWidgets import (
     QWidget, QTextEdit, QLineEdit, QLabel, QPushButton
 )
 
+from monoberrytester import texts
+from monoberrytester import styles
+
 TEST_CASES_DATA = {
     "uart_connect":             "UART: initial connection",
     "both_dm_qrs_scanned":      "SCAN: Both data matrix QR codes scanned correctly",
     "serial_and_macs_received": "SERVER: Serial and MAC addresses received"
 }
-
-class Texts:
-    status_ready_to_start               = "Plug in UART cable and click START"
-    status_conn_to_uart                 = "Connecting to UART"
-    status_conn_to_uart_failed          = "Connection to UART failed!"
-    status_scan_qr_top                  = "Scan the TOP data matrix QR code"
-    status_scan_qr_bottom               = "Scan the BOTTOM data matrix QR code"
-    status_get_ser_macs                 = "Fetching serial and MACs"
-    status_connect_cables               = "Connect cables"
-    status_done                         = "All tests successful!"
-    ui_start_btn_label_start            = "Start"
-    ui_start_btn_label_cont             = "Continue"
-    ui_reset_btn_label                  = "Reset"
-    ui_label_top_qr                     = "Top data matrix (QR code)"
-    ui_label_bottom_qr                  = "Top data matrix (QR code)"
-    ui_label_qr_group                   = "Data matrix QR codes"
-    log_info_uart_connected             = "Connected to UART"
-    log_error_uart_failed               = "UART connection FAILED: "
-    log_info_first_code_scanned         = "First code scanned: "
-    log_info_second_code_scanned        = "Second code scanned: "
-    log_error_wrong_state_to_start_from = "Can not start from state: "
-    log_error_more_than_2_qr_scanned    = "More than 2 dm qr codes scanned somehow!"
-    log_info_server_response            = "Recevied response from server:\n"
-    log_info_server_error               = "Recevied ERROR from server:\n"
-    log_info_done                       = "Done!"
-
-class Styles:
-    label_default       = "QLabel { color: gray; }"
-    start_btn_idle      = "QPushButton { background-color: darkblue; }"
-    start_btn_continue  = "QPushButton { background-color: darkgreen; }"
-    start_btn_disabled  = "QPushButton { background-color: #222; }"
-    reset_btn           = "QPushButton { background-color: darkred; }"
-    status_normal       = "QLabel { font-size: 18px; color: white; }"
-    status_error        = "QLabel { color: red; }"
 
 class State(Enum):
     IDLE                        = auto()
@@ -112,6 +111,8 @@ class ServerClient(QThread):
         super().__init__()
         self.logger = logging_service
         self.server_endpoint = server_endpoint
+        self.qr1 = None
+        self.qr2 = None
 
     def set_codes(self, codes):
         self.qr1 = codes[0]
@@ -120,7 +121,7 @@ class ServerClient(QThread):
     def run(self):
         url = self.server_endpoint + "/getserial?qr1=" + self.qr1 + "&qr2=" + self.qr2
         try:
-            r = requests.get(url)
+            r = requests.get(url, timeout = 10)
             if r.status_code != 200:
                 self.response_received.emit(False, r.text)
             else:
@@ -143,6 +144,7 @@ class SerialService(QThread):
         self.port = port
         self.baudrate = baudrate
         self.running = False
+        self.serial = None
 
     def run(self):
         try:
@@ -208,7 +210,7 @@ class Workflow(QObject):
     # Entry point into testing
     def start(self):
         if self.state != State.IDLE:
-            self.logger.info(Texts.log_wrong_state_to_start_from + self.state)
+            self.logger.info(texts.log_wrong_state_to_start_from + self.state)
             return
 
         self.__change_state(State.STARTED)
@@ -240,7 +242,7 @@ class Workflow(QObject):
     # the board is fully functional (to our knowledge)
     def done(self):
         self.__change_state(State.DONE)
-        self.logger.info(Texts.log_info_done)
+        self.logger.info(texts.log_info_done)
 
     # Handler for all key presses. But it only forwards it to
     # scaner service if it is at the scanning step
@@ -259,32 +261,32 @@ class Workflow(QObject):
         self.code_scanned.emit(self.scanned_codes)
 
         if len(self.scanned_codes) == 1:
-            self.logger.info(Texts.log_info_first_code_scanned + code)
+            self.logger.info(texts.log_info_first_code_scanned + code)
         elif len(self.scanned_codes) == 2:
-            self.logger.info(Texts.log_info_second_code_scanned + code)
+            self.logger.info(texts.log_info_second_code_scanned + code)
             self.fetch_serial_and_macs()
         else:
-            self.logger.error(Texts.log_error_more_than_2_qr_scanned)
+            self.logger.error(texts.log_error_more_than_2_qr_scanned)
 
     # Called upon receiving a response from the server
     def __handle_server_response(self, success: bool, response: str):
         if success:
-            self.logger.info(Texts.log_info_server_response + response)
+            self.logger.info(texts.log_info_server_response + response)
             r = response.split()
             self.serial_num = r[0]
             self.mac_addresses = r[1:]
             self.connect_cables()
         else:
-            self.logger.error(Texts.log_info_server_error + response)
+            self.logger.error(texts.log_info_server_error + response)
 
     def __handle_serial_connected(self):
-        self.logger.info(Texts.log_info_uart_connected)
+        self.logger.info(texts.log_info_uart_connected)
         self.scan_qr_codes()
 
     def __handle_serial_failed(self, err_msg):
-        self.logger.error(Texts.log_error_uart_failed + err_msg)
+        self.logger.error(texts.log_error_uart_failed + err_msg)
         self.__change_state(State.FAILED, {
-            "status": Texts.status_conn_to_uart_failed,
+            "status": texts.status_conn_to_uart_failed,
             "err_msg": err_msg
         })
 
@@ -333,16 +335,16 @@ class UI(QWidget):
         right_panel = QVBoxLayout()
 
         # Create UI
-        self.reset_btn = QPushButton(Texts.ui_reset_btn_label)
-        self.label = QLabel(Texts.status_ready_to_start)
-        self.label.setStyleSheet(Styles.status_normal)
+        self.reset_btn = QPushButton(texts.ui_reset_btn_label)
+        self.label = QLabel(texts.status_ready_to_start)
+        self.label.setStyleSheet(styles.status_normal)
 
-        self.dm_qr_group = QGroupBox(Texts.ui_label_qr_group)
+        self.dm_qr_group = QGroupBox(texts.ui_label_qr_group)
         self.dm_gr_group_layout = QVBoxLayout()
-        self.dm_qr_label_top = QLabel(Texts.ui_label_top_qr)
+        self.dm_qr_label_top = QLabel(texts.ui_label_top_qr)
         self.dm_qr_line_edit_top = QLineEdit()
         self.dm_qr_line_edit_top.setDisabled(True)
-        self.dm_qr_label_bottom = QLabel(Texts.ui_label_bottom_qr)
+        self.dm_qr_label_bottom = QLabel(texts.ui_label_bottom_qr)
         self.dm_qr_line_edit_bottom = QLineEdit()
         self.dm_qr_line_edit_bottom.setDisabled(True)
         self.dm_gr_group_layout.addWidget(self.dm_qr_label_top)
@@ -354,7 +356,7 @@ class UI(QWidget):
         self.log_text_edit = QTextEdit()
         self.log_text_edit.setDisabled(True)
 
-        self.start_btn = QPushButton(Texts.ui_start_btn_label_start)
+        self.start_btn = QPushButton(texts.ui_start_btn_label_start)
         self.reset_btn.setEnabled(False)
 
         # Assemble UI
@@ -434,7 +436,7 @@ class Main(QMainWindow):
 
     def __update_scanned_codes(self, codes):
         if len(codes) == 1:
-            self.ui.update_status(Texts.status_scan_qr_bottom)
+            self.ui.update_status(texts.status_scan_qr_bottom)
             self.ui.set_dm_qr_top(codes[0])
         elif len(codes) == 2:
             self.ui.set_dm_qr_bottom(codes[1])
@@ -448,7 +450,7 @@ class Main(QMainWindow):
             handler()
 
     def __update_ui_idle(self):
-        self.ui.update_status(Texts.status_ready_to_start)
+        self.ui.update_status(texts.status_ready_to_start)
         self.ui.clear_qr_codes()
         self.ui.start_btn_enable()
         self.ui.reset_btn_disable()
@@ -458,19 +460,19 @@ class Main(QMainWindow):
         self.ui.reset_btn_enable()
 
     def __update_ui_connecting_to_uart(self):
-        self.ui.update_status(Texts.status_conn_to_uart)
+        self.ui.update_status(texts.status_conn_to_uart)
 
     def __update_ui_scanning_qr_codes(self):
-        self.ui.update_status(Texts.status_scan_qr_top)
+        self.ui.update_status(texts.status_scan_qr_top)
 
     def __update_ui_fetching_serial_and_macs(self):
-        self.ui.update_status(Texts.status_get_ser_macs)
+        self.ui.update_status(texts.status_get_ser_macs)
 
     def __update_ui_connecting_cables(self):
-        self.ui.update_status(Texts.status_connect_cables)
+        self.ui.update_status(texts.status_connect_cables)
 
     def __update_ui_done(self):
-        self.ui.update_status(Texts.status_done)
+        self.ui.update_status(texts.status_done)
 
     def __update_ui_failed(self, msgs):
         self.ui.update_status(msgs["status"])
