@@ -1,3 +1,6 @@
+"""
+Test definitions for display and update on UI
+"""
 TEST_DEFS = {
     "0_conn_to_uart": "Connect to UART",
     "1_scan_two_dm_qr_codes": "Scan two data matrix QR codes",

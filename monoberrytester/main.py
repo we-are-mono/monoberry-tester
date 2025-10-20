@@ -29,7 +29,7 @@ import serial
 from PyQt5.QtCore import Qt, QObject, QThread, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QHBoxLayout, QVBoxLayout, QGroupBox,
-    QWidget, QTextEdit, QLineEdit, QLabel, QPushButton
+    QWidget, QTextEdit, QLineEdit, QLabel, QPushButton, QSizePolicy
 )
 
 import texts
@@ -48,6 +48,7 @@ class State(Enum):
     FAILED                      = auto()
 
 class TestState(Enum):
+    """Class to define possible test states"""
     PENDING =   auto()
     RUNNING =   auto()
     FAILED =    auto()
@@ -149,7 +150,7 @@ class ServerClient(QThread):
                 self.response_received.emit(False, r.text)
             else:
                 self.response_received.emit(True, r.text)
-        except Exception as e:
+        except requests.RequestException as e:
             self.error_occured.emit(str(e))
             self.logger.error(str(e))
 
@@ -190,19 +191,19 @@ class SerialService(QThread):
                     if line:
                         self.received_data.emit(line)
                         print("S> " + line)
-                except Exception as e:
+                except serial.SerialException as e:
                     if self.running:
                         self.failed.emit(str(e))
                         break
                 self.msleep(10)
 
-        except Exception as e:
+        except serial.SerialException as e:
             self.failed.emit(str(e))
         finally:
             if self.serial and self.serial.is_open:
                 try:
                     self.serial.close()
-                except:
+                except serial.SerialException as _:
                     pass
             self.running = False
 
@@ -212,7 +213,7 @@ class SerialService(QThread):
         if self.serial and self.serial.is_open:
             try:
                 self.serial.close()
-            except:
+            except serial.SerialException as _:
                 pass
 
         if self.isRunning():
@@ -333,8 +334,10 @@ class Workflow(QObject):
         if self.state == State.SCANNING_QR_CODES:
             self.scanner.handle_input(event.key(), event.text())
 
-    def __change_state(self, state, msgs = {}):
+    def __change_state(self, state, msgs = None):
         """Helper to make sure state_changed is emited also on state change"""
+        if msgs is None:
+            msgs = {}
         self.state = state
         self.state_changed.emit(msgs)
 
@@ -452,8 +455,9 @@ class UI(QWidget):
         self.reset_btn = QPushButton(texts.UI_RESET_BTN_LABEL)
         self.label = QLabel(texts.STATUS_READY_TO_START)
         self.label.setStyleSheet(styles.STATUS_NORMAL)
+        self.label.setContentsMargins(8, 16, 0, 16)
 
-        self.dm_qr_group = QGroupBox(texts.UI_LABEL_QR_GROUP)
+        self.dm_qr_group = QGroupBox()
         self.dm_gr_group_layout = QVBoxLayout()
         self.dm_qr_label_top = QLabel(texts.UI_LABEL_TOP_QR)
         self.dm_qr_line_edit_top = QLineEdit()
@@ -469,6 +473,8 @@ class UI(QWidget):
 
         self.log_text_edit = QTextEdit()
         self.log_text_edit.setDisabled(True)
+        self.log_text_edit.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        self.log_text_edit.setDisabled(True)
 
         self.start_btn = QPushButton(texts.UI_START_BTN_LABEL_START)
         self.reset_btn.setEnabled(False)
@@ -476,9 +482,7 @@ class UI(QWidget):
         # Assemble UI
         left_panel.addWidget(self.reset_btn)
         left_panel.addWidget(self.label)
-        left_panel.addStretch()
         left_panel.addWidget(self.dm_qr_group)
-        left_panel.addStretch()
         left_panel.addWidget(self.log_text_edit)
         left_panel.addWidget(self.start_btn)
 
@@ -539,6 +543,7 @@ class UI(QWidget):
         self.dm_qr_line_edit_bottom.setText("")
 
     def set_test_state(self, name, state):
+        """Sets a state for a single test"""
         match state:
             case TestState.PENDING:
                 self.tests[name].set_idle()
@@ -550,7 +555,8 @@ class UI(QWidget):
                 self.tests[name].set_failure()
 
     def mark_all_tests_idle(self):
-        for name in self.tests:
+        """Marks all tests as idle (on reset for example)"""
+        for name, _ in self.tests:
             self.tests[name].set_idle()
 
 class Main(QMainWindow):
