@@ -1,4 +1,3 @@
-# pylint: disable=too-many-instance-attributes
 # -*- coding: utf-8 -*-
 """
 This is an application that will be running on a Raspberry Pi that will act

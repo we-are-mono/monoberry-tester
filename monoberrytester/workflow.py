@@ -1,3 +1,9 @@
+# pylint: disable=too-many-instance-attributes
+
+"""
+All 'business' logic
+"""
+
 from enum import Enum, auto
 from PyQt5.QtCore import QObject, pyqtSignal
 

@@ -1,8 +1,14 @@
+# pylint: disable=too-many-instance-attributes
+
+"""
+All (only) UI related code
+"""
+
 from enum import Enum, auto
 
 from PyQt5.QtWidgets import (
     QHBoxLayout, QVBoxLayout, QGroupBox,
-    QWidget, QTextEdit, QLineEdit, QLabel, QPushButton, QSizePolicy
+    QWidget, QTextEdit, QLineEdit, QLabel, QPushButton
 )
 
 import texts
@@ -104,8 +110,8 @@ class UI(QWidget):
         left_panel.addWidget(self.log_text_edit)
         left_panel.addWidget(self.start_btn)
 
-        for name in self.tests:
-            right_panel.addWidget(self.tests[name])
+        for _, t in self.tests.items():
+            right_panel.addWidget(t)
 
         right_panel.addStretch()
 
@@ -174,5 +180,5 @@ class UI(QWidget):
 
     def mark_all_tests_idle(self):
         """Marks all tests as idle (on reset for example)"""
-        for name, _ in self.tests:
-            self.tests[name].set_idle()
+        for _, t in self.tests.items():
+            t.set_idle()

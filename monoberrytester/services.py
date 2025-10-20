@@ -1,8 +1,13 @@
+"""
+Collection of services for external communication 
+like serial, http, logs, barcode scanner, ...
+"""
+
+from datetime import datetime
+
 import logging
 import requests
 import serial
-
-from datetime import datetime
 
 from PyQt5.QtCore import Qt, QObject, QThread, pyqtSignal
 from PyQt5.QtWidgets import QTextEdit
