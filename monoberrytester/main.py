@@ -210,7 +210,7 @@ class Workflow(QObject):
     # Entry point into testing
     def start(self):
         if self.state != State.IDLE:
-            self.logger.info(texts.log_wrong_state_to_start_from + self.state)
+            self.logger.info(texts.LOG_WRONG_STATE_TO_START_FROM + self.state)
             return
 
         self.__change_state(State.STARTED)
@@ -242,7 +242,7 @@ class Workflow(QObject):
     # the board is fully functional (to our knowledge)
     def done(self):
         self.__change_state(State.DONE)
-        self.logger.info(texts.log_info_done)
+        self.logger.info(texts.LOG_INFO_DONE)
 
     # Handler for all key presses. But it only forwards it to
     # scaner service if it is at the scanning step
@@ -261,32 +261,32 @@ class Workflow(QObject):
         self.code_scanned.emit(self.scanned_codes)
 
         if len(self.scanned_codes) == 1:
-            self.logger.info(texts.log_info_first_code_scanned + code)
+            self.logger.info(texts.LOG_INFO_FIRST_CODE_SCANNED + code)
         elif len(self.scanned_codes) == 2:
-            self.logger.info(texts.log_info_second_code_scanned + code)
+            self.logger.info(texts.LOG_INFO_SECOND_CODE_SCANNED + code)
             self.fetch_serial_and_macs()
         else:
-            self.logger.error(texts.log_error_more_than_2_qr_scanned)
+            self.logger.error(texts.LOG_ERROR_MORE_THAN_2_QR_SCANNED)
 
     # Called upon receiving a response from the server
     def __handle_server_response(self, success: bool, response: str):
         if success:
-            self.logger.info(texts.log_info_server_response + response)
+            self.logger.info(texts.LOG_INFO_SERVER_RESPONSE + response)
             r = response.split()
             self.serial_num = r[0]
             self.mac_addresses = r[1:]
             self.connect_cables()
         else:
-            self.logger.error(texts.log_info_server_error + response)
+            self.logger.error(texts.LOG_INFO_SERVER_ERROR + response)
 
     def __handle_serial_connected(self):
-        self.logger.info(texts.log_info_uart_connected)
+        self.logger.info(texts.LOG_INFO_UART_CONNECTED)
         self.scan_qr_codes()
 
     def __handle_serial_failed(self, err_msg):
-        self.logger.error(texts.log_error_uart_failed + err_msg)
+        self.logger.error(texts.LOG_ERROR_UART_FAILED + err_msg)
         self.__change_state(State.FAILED, {
-            "status": texts.status_conn_to_uart_failed,
+            "status": texts.STATUS_CONN_TO_UART_FAILED,
             "err_msg": err_msg
         })
 
@@ -335,16 +335,16 @@ class UI(QWidget):
         right_panel = QVBoxLayout()
 
         # Create UI
-        self.reset_btn = QPushButton(texts.ui_reset_btn_label)
-        self.label = QLabel(texts.status_ready_to_start)
-        self.label.setStyleSheet(styles.status_normal)
+        self.reset_btn = QPushButton(texts.UI_RESET_BTN_LABEL)
+        self.label = QLabel(texts.STATUS_READY_TO_START)
+        self.label.setStyleSheet(styles.STATUS_NORMAL)
 
-        self.dm_qr_group = QGroupBox(texts.ui_label_qr_group)
+        self.dm_qr_group = QGroupBox(texts.UI_LABEL_QR_GROUP)
         self.dm_gr_group_layout = QVBoxLayout()
-        self.dm_qr_label_top = QLabel(texts.ui_label_top_qr)
+        self.dm_qr_label_top = QLabel(texts.UI_LABEL_TOP_QR)
         self.dm_qr_line_edit_top = QLineEdit()
         self.dm_qr_line_edit_top.setDisabled(True)
-        self.dm_qr_label_bottom = QLabel(texts.ui_label_bottom_qr)
+        self.dm_qr_label_bottom = QLabel(texts.UI_LABEL_BOTTOM_QR)
         self.dm_qr_line_edit_bottom = QLineEdit()
         self.dm_qr_line_edit_bottom.setDisabled(True)
         self.dm_gr_group_layout.addWidget(self.dm_qr_label_top)
@@ -356,7 +356,7 @@ class UI(QWidget):
         self.log_text_edit = QTextEdit()
         self.log_text_edit.setDisabled(True)
 
-        self.start_btn = QPushButton(texts.ui_start_btn_label_start)
+        self.start_btn = QPushButton(texts.UI_START_BTN_LABEL_START)
         self.reset_btn.setEnabled(False)
 
         # Assemble UI
@@ -389,8 +389,13 @@ class UI(QWidget):
     def reset_btn_disable(self):
         self.reset_btn.setDisabled(True)
 
-    def update_status(self, text):
+    def update_status(self, text, err=False):
         self.label.setText(text)
+        
+        if err:
+            self.label.setStyleSheet(styles.STATUS_ERROR)
+        else:
+            self.label.setStyleSheet(styles.STATUS_NORMAL)
 
     def set_dm_qr_top(self, code: str):
         self.dm_qr_line_edit_top.setText(code)
@@ -436,7 +441,7 @@ class Main(QMainWindow):
 
     def __update_scanned_codes(self, codes):
         if len(codes) == 1:
-            self.ui.update_status(texts.status_scan_qr_bottom)
+            self.ui.update_status(texts.STATUS_SCAN_QR_BOTTOM)
             self.ui.set_dm_qr_top(codes[0])
         elif len(codes) == 2:
             self.ui.set_dm_qr_bottom(codes[1])
@@ -450,7 +455,7 @@ class Main(QMainWindow):
             handler()
 
     def __update_ui_idle(self):
-        self.ui.update_status(texts.status_ready_to_start)
+        self.ui.update_status(texts.STATUS_READY_TO_START)
         self.ui.clear_qr_codes()
         self.ui.start_btn_enable()
         self.ui.reset_btn_disable()
@@ -460,22 +465,22 @@ class Main(QMainWindow):
         self.ui.reset_btn_enable()
 
     def __update_ui_connecting_to_uart(self):
-        self.ui.update_status(texts.status_conn_to_uart)
+        self.ui.update_status(texts.STATUS_CONN_TO_UART)
 
     def __update_ui_scanning_qr_codes(self):
-        self.ui.update_status(texts.status_scan_qr_top)
+        self.ui.update_status(texts.STATUS_SCAN_QR_TOP)
 
     def __update_ui_fetching_serial_and_macs(self):
-        self.ui.update_status(texts.status_get_ser_macs)
+        self.ui.update_status(texts.STATUS_GET_SER_MACS)
 
     def __update_ui_connecting_cables(self):
-        self.ui.update_status(texts.status_connect_cables)
+        self.ui.update_status(texts.STATUS_CONNECT_CABLES)
 
     def __update_ui_done(self):
-        self.ui.update_status(texts.status_done)
+        self.ui.update_status(texts.STATUS_DONE)
 
     def __update_ui_failed(self, msgs):
-        self.ui.update_status(msgs["status"])
+        self.ui.update_status(msgs["status"], err = True)
 
     def keyPressEvent(self, event):
         self.workflow.key_pressed(event)
