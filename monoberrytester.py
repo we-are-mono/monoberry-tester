@@ -1,11 +1,14 @@
-import sys, logging, requests, serial
+import sys
+import logging
+import requests
+import serial
 from enum import Enum, auto
 from datetime import datetime
 
 from PyQt5.QtCore import Qt, QObject, QThread, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QHBoxLayout, QVBoxLayout, QGroupBox,
-    QWidget, QFrame, QTextEdit, QLineEdit, QLabel, QPushButton
+    QWidget, QTextEdit, QLineEdit, QLabel, QPushButton
 )
 
 TEST_CASES_DATA = {
@@ -63,7 +66,7 @@ class State(Enum):
 class LoggingService(QObject):
     def __init__(self, text_widget: QTextEdit):
         super().__init__()
-        self.text_widget = text_widget     
+        self.text_widget = text_widget
         self.filename = self.__generate_log_filename()
         self.__init_logging(self.filename)
 
@@ -105,19 +108,20 @@ class ScannerService(QObject):
 class ServerClient(QThread):
     response_received = pyqtSignal(bool, str)
 
-    def __init__(self, logging_service: LoggingService):
+    def __init__(self, server_endpoint, logging_service: LoggingService):
         super().__init__()
         self.logger = logging_service
+        self.server_endpoint = server_endpoint
 
     def set_codes(self, codes):
         self.qr1 = codes[0]
         self.qr2 = codes[1]
 
     def run(self):
-        url = SERVER_ENDPOINT + "/getserial?qr1=" + self.qr1 + "&qr2=" + self.qr2
+        url = self.server_endpoint + "/getserial?qr1=" + self.qr1 + "&qr2=" + self.qr2
         try:
             r = requests.get(url)
-            if(r.status_code != 200):
+            if r.status_code != 200:
                 self.response_received.emit(False, r.text)
             else:
                 self.response_received.emit(True, r.text)
@@ -146,7 +150,7 @@ class SerialService(QThread):
             self.connected.emit()
             self.running = True
 
-            while(self.running):
+            while self.running:
                 line = self.serial.readline().decode().strip()
                 if line:
                     self.received_data.emit(line)
@@ -261,7 +265,7 @@ class Workflow(QObject):
             self.fetch_serial_and_macs()
         else:
             self.logger.error(Texts.log_error_more_than_2_qr_scanned)
-    
+
     # Called upon receiving a response from the server
     def __handle_server_response(self, success: bool, response: str):
         if success:
@@ -321,7 +325,7 @@ class UI(QWidget):
         super().__init__()
         self.__init_ui()
 
-    def __init_ui(self): 
+    def __init_ui(self):
         self.setContentsMargins(8, 8, 8, 8)
 
         layout = QHBoxLayout()
@@ -332,8 +336,20 @@ class UI(QWidget):
         self.reset_btn = QPushButton(Texts.ui_reset_btn_label)
         self.label = QLabel(Texts.status_ready_to_start)
         self.label.setStyleSheet(Styles.status_normal)
-        
-        self.__create_dm_qr_group()
+
+        self.dm_qr_group = QGroupBox(Texts.ui_label_qr_group)
+        self.dm_gr_group_layout = QVBoxLayout()
+        self.dm_qr_label_top = QLabel(Texts.ui_label_top_qr)
+        self.dm_qr_line_edit_top = QLineEdit()
+        self.dm_qr_line_edit_top.setDisabled(True)
+        self.dm_qr_label_bottom = QLabel(Texts.ui_label_bottom_qr)
+        self.dm_qr_line_edit_bottom = QLineEdit()
+        self.dm_qr_line_edit_bottom.setDisabled(True)
+        self.dm_gr_group_layout.addWidget(self.dm_qr_label_top)
+        self.dm_gr_group_layout.addWidget(self.dm_qr_line_edit_top)
+        self.dm_gr_group_layout.addWidget(self.dm_qr_label_bottom)
+        self.dm_gr_group_layout.addWidget(self.dm_qr_line_edit_bottom)
+        self.dm_qr_group.setLayout(self.dm_gr_group_layout)
 
         self.log_text_edit = QTextEdit()
         self.log_text_edit.setDisabled(True)
@@ -358,7 +374,7 @@ class UI(QWidget):
         layout.addLayout(left_panel, stretch=1)
         layout.addLayout(right_panel, stretch=2)
         self.setLayout(layout)
-    
+
     def start_btn_enable(self):
         self.start_btn.setDisabled(False)
 
@@ -376,7 +392,7 @@ class UI(QWidget):
 
     def set_dm_qr_top(self, code: str):
         self.dm_qr_line_edit_top.setText(code)
-        
+
     def set_dm_qr_bottom(self, code: str):
         self.dm_qr_line_edit_bottom.setText(code)
 
@@ -384,23 +400,8 @@ class UI(QWidget):
         self.dm_qr_line_edit_top.setText("")
         self.dm_qr_line_edit_bottom.setText("")
 
-    def __create_dm_qr_group(self):
-        self.dm_qr_group = QGroupBox(Texts.ui_label_qr_group)
-        self.dm_gr_group_layout = QVBoxLayout()
-        self.dm_qr_label_top = QLabel(Texts.ui_label_top_qr)
-        self.dm_qr_line_edit_top = QLineEdit()
-        self.dm_qr_line_edit_top.setDisabled(True)
-        self.dm_qr_label_bottom = QLabel(Texts.ui_label_bottom_qr)
-        self.dm_qr_line_edit_bottom = QLineEdit()
-        self.dm_qr_line_edit_bottom.setDisabled(True)
-        self.dm_gr_group_layout.addWidget(self.dm_qr_label_top)
-        self.dm_gr_group_layout.addWidget(self.dm_qr_line_edit_top)
-        self.dm_gr_group_layout.addWidget(self.dm_qr_label_bottom)
-        self.dm_gr_group_layout.addWidget(self.dm_qr_line_edit_bottom)
-        self.dm_qr_group.setLayout(self.dm_gr_group_layout)
-
 class Main(QMainWindow):
-    def __init__(self):
+    def __init__(self, server_endpoint, serial_port):
         super().__init__()
 
         # Init UI
@@ -410,9 +411,9 @@ class Main(QMainWindow):
 
         # Init services
         self.logger         = LoggingService(self.ui.log_text_edit)
-        self.serial         = SerialService(SERIAL_PORT, 115200)
+        self.serial         = SerialService(serial_port, 115200)
         self.scanner        = ScannerService()
-        self.server_client  = ServerClient(self.logger)
+        self.server_client  = ServerClient(server_endpoint, self.logger)
         self.workflow       = Workflow(self.logger, self.serial, self.scanner, self.server_client)
 
         self.ui.start_btn.clicked.connect(self.workflow.start)
@@ -438,48 +439,55 @@ class Main(QMainWindow):
         elif len(codes) == 2:
             self.ui.set_dm_qr_bottom(codes[1])
 
-    def __update_ui(self, msg):
+    def __update_ui(self, msgs):
         state = self.workflow.state
         handler = self.state_handlers.get(state)
-        handler(msg)
+        if msgs:
+            handler(msgs)
+        else:
+            handler()
 
-    def __update_ui_idle(self, msg):
+    def __update_ui_idle(self):
         self.ui.update_status(Texts.status_ready_to_start)
         self.ui.clear_qr_codes()
         self.ui.start_btn_enable()
         self.ui.reset_btn_disable()
 
-    def __update_ui_started(self, msg):
+    def __update_ui_started(self):
         self.ui.start_btn_disable()
         self.ui.reset_btn_enable()
 
-    def __update_ui_connecting_to_uart(self, msg):
+    def __update_ui_connecting_to_uart(self):
         self.ui.update_status(Texts.status_conn_to_uart)
 
-    def __update_ui_scanning_qr_codes(self, msg):
+    def __update_ui_scanning_qr_codes(self):
         self.ui.update_status(Texts.status_scan_qr_top)
 
-    def __update_ui_fetching_serial_and_macs(self, msg):
+    def __update_ui_fetching_serial_and_macs(self):
         self.ui.update_status(Texts.status_get_ser_macs)
 
-    def __update_ui_connecting_cables(self, msg):
+    def __update_ui_connecting_cables(self):
         self.ui.update_status(Texts.status_connect_cables)
 
-    def __update_ui_done(self, msg):
+    def __update_ui_done(self):
         self.ui.update_status(Texts.status_done)
-    
+
     def __update_ui_failed(self, msgs):
         self.ui.update_status(msgs["status"])
 
     def keyPressEvent(self, event):
         self.workflow.key_pressed(event)
 
-app = QApplication(sys.argv)
+def main():
+    app = QApplication(sys.argv)
 
-SERVER_ENDPOINT = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000"
-SERIAL_PORT = sys.argv[2] if len(sys.argv) > 2 else "/tmp/ttyMBT01"
+    server_endpoint = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000"
+    serial_port = sys.argv[2] if len(sys.argv) > 2 else "/tmp/ttyMBT01"
 
-window = Main()
-window.show()
-# window.showFullScreen()
-app.exec()
+    window = Main(server_endpoint, serial_port)
+    window.show()
+    # window.showFullScreen()
+    app.exec()
+
+if __name__ == "__main__":
+    main()
