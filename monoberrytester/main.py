@@ -14,16 +14,7 @@ hardcoded (server endpoint, serial port). In production run it like this:
 
 Section breaks are created by resuming unindented text. Section breaks
 are also implicitly created anytime a new section starts.
-
-Attributes:
-    TEST_CASES_DATA (dict): A dictionary of test cases to make widgets from and 
-    display in the right panel so they can be marked as successful/failed.
-
-    State(Enum): States that the application goes through. UI updates and other
-    things happen based on state transitions.
-
-Todo:
-    * Implement and test a real Scanner class when we get the USB barcode scanner
+-----
 """
 
 from enum import Enum, auto
@@ -48,8 +39,13 @@ TEST_CASES_DATA = {
     "both_dm_qrs_scanned":      "SCAN: Both data matrix QR codes scanned correctly",
     "serial_and_macs_received": "SERVER: Serial and MAC addresses received"
 }
+"""
+A dictionary of test cases to make widgets from and
+display in the right panel so they can be marked as successful/failed.
+"""
 
 class State(Enum):
+    """Class to define states of the application"""
     IDLE                        = auto()
     STARTED                     = auto()
     CONNECTING_TO_UART          = auto()
@@ -59,9 +55,13 @@ class State(Enum):
     DONE                        = auto()
     FAILED                      = auto()
 
-# Add Log class that adds log statements to the text field
-# and writes/appends them also to a log file
 class LoggingService(QObject):
+    """Class for logging into a file and on screen to QTextEdit widget
+    
+    Args:
+        text_widget (QTextEdit): Text field to append log statements to
+    """
+
     def __init__(self, text_widget: QTextEdit):
         super().__init__()
         self.text_widget = text_widget
@@ -69,25 +69,35 @@ class LoggingService(QObject):
         self.__init_logging(self.filename)
 
     def info(self, text):
+        """Logs text as info"""
         self.text_widget.append("INFO > " + text)
         logging.info(text)
 
     def error(self, text):
+        """Logs text as error"""
         self.text_widget.append("ERROR > " + text)
         logging.error(text)
 
     def __generate_log_filename(self):
+        """Generates a log filename based on current time."""
         return "/tmp/mbt-" + datetime.now().strftime('%Y-%m-%d-%H-%M-%S') + ".log"
 
     def __init_logging(self, filename):
+        """Sets up logging"""
         logging.basicConfig(
             filename    = filename,
             level       = logging.INFO,
             format      = '%(asctime)s - %(message)s'
         )
 
-# TODO: replace with actual code when I get the barcode scanner
 class ScannerService(QObject):
+    """Class that handles communication with the USB barcode scanner
+    TODO: replace with actual code when I get the barcode scanner
+    
+    Attributes:
+        code_received (pyqtSignal): Signal for when a code is scanned
+    """
+
     code_received = pyqtSignal(str)
 
     def __init__(self):
@@ -95,15 +105,20 @@ class ScannerService(QObject):
         self.buffer = ""
 
     def handle_input(self, key, text):
+        """Reads key presses until a return key is pressed"""
         if key in (Qt.Key_Return, Qt.Key_Enter):
             self.code_received.emit(self.buffer)
             self.buffer = ""
         elif text:
             self.buffer += text
 
-# One liner server with 1s delay for testing:
-#   ncat -lk 8000 -c 'sleep 1; echo "HTTP/1.1 200 OK\r\n\r\nS3R14LNUM83R\n02:00:00:00:00:01\n02:00:00:00:00:02\n02:00:00:00:00:03\n02:00:00:00:00:04\n02:00:00:00:00:05"'
 class ServerClient(QThread):
+    """HTTP Client to call our server
+
+    Args:
+        server_endpoint (str): URL base for our server endpoint
+        logging_service (LoggingService): Service for logging
+    """
     response_received = pyqtSignal(bool, str)
 
     def __init__(self, server_endpoint, logging_service: LoggingService):
@@ -114,10 +129,14 @@ class ServerClient(QThread):
         self.qr2 = None
 
     def set_codes(self, codes):
+        """
+        Sets scanned QR data matrix codes (do this before calling `run` method)
+        """
         self.qr1 = codes[0]
         self.qr2 = codes[1]
 
     def run(self):
+        """Runs the thread and fetches serial and MACs from our server"""
         url = self.server_endpoint + "/getserial?qr1=" + self.qr1 + "&qr2=" + self.qr2
         try:
             r = requests.get(url, timeout = 10)

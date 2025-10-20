@@ -5,7 +5,7 @@ lint:
 
 docs:
 	@echo "Generating API documentation with pdoc..."
-	pydoc-markdown -p . > docs.md
+	pydoc-markdown -p monoberrytester > docs.md
 
 run:
 	python3 monoberrytester/main.py
