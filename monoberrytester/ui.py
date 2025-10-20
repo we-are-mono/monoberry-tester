@@ -168,15 +168,14 @@ class UI(QWidget):
 
     def set_test_state(self, name, state):
         """Sets a state for a single test"""
-        match state:
-            case TestState.PENDING:
-                self.tests[name].set_idle()
-            case TestState.RUNNING:
-                self.tests[name].set_running()
-            case TestState.SUCCEEDED:
-                self.tests[name].set_success()
-            case TestState.FAILED:
-                self.tests[name].set_failure()
+        if state is TestState.PENDING:
+            self.tests[name].set_idle()
+        elif state is TestState.RUNNING:
+            self.tests[name].set_running()
+        elif state is TestState.SUCCEEDED:
+            self.tests[name].set_success()
+        elif state is TestState.FAILED:
+            self.tests[name].set_failure()
 
     def mark_all_tests_idle(self):
         """Marks all tests as idle (on reset for example)"""
