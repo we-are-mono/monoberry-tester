@@ -14,6 +14,8 @@ import urllib
 
 from PyQt5.QtCore import Qt, QObject, QThread, pyqtSignal
 
+THREAD_WAIT_TIMEOUT_MS = 1000
+
 class LoggingService(QObject):
     """Class for logging into a file and on screen to QTextEdit widget"""
 
@@ -42,9 +44,9 @@ class LoggingService(QObject):
     def __init_logging(self, filename):
         """Sets up logging"""
         logging.basicConfig(
-            filename    = filename,
-            level       = logging.INFO,
-            format      = '%(asctime)s - %(message)s'
+            filename=filename,
+            level=logging.INFO,
+            format='%(asctime)s - %(message)s'
         )
 
 class ScannerService(QObject):
@@ -106,10 +108,9 @@ class ServerClient(QObject):
 
     def run(self):
         """Runs the thread and fetches serial and MACs from our server"""
-        print("Server client run...")
         url = urllib.parse.urljoin(self.server_endpoint, self.path)
         try:
-            r = requests.request(method = self.method.upper(), url = url, params = self.request_params)
+            r = requests.request(method=self.method.upper(), url=url, params=self.request_params, timeout=10)
 
             if r.status_code != 200:
                 self.response_received.emit(False, r.text)
@@ -125,7 +126,7 @@ class ServerClient(QObject):
         self.request_params = request_params
 
 class SerialService(QThread):
-    """UART client to communicate with our BUTT (board under test tool)
+    """UART client to communicate with our BUTT (board under testing tool)
 
     Attributes:
         connected (pyqtSignal): Signals when UART is successfully connected
@@ -172,21 +173,21 @@ class SerialService(QThread):
             if self.serial and self.serial.is_open:
                 try:
                     self.serial.close()
-                except serial.SerialException as _:
-                    pass
+                except serial.SerialException as e:
+                    self.failed.emit(str(e))
             self.running = False
             self.serial = None
 
     def stop(self):
         """Stops the connection and waits for thread to finish"""
-        self.running = False
         if self.serial and self.serial.is_open:
             try:
                 self.serial.close()
             except serial.SerialException as _:
                 pass
 
+        self.running = False
         self.serial = None
 
         if self.isRunning():
-            self.wait(1000)
+            self.wait(THREAD_WAIT_TIMEOUT_MS)

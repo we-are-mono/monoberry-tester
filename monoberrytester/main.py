@@ -9,11 +9,7 @@ peripherals connected:
 - Ethernet cable if we can't use WiFi
 
 If it is run without command line  arguments it uses testing ones that are
-hardcoded (server endpoint, serial port). In production run it like this:
-    $ python example_google.py
-
-Section breaks are created by resuming unindented text. Section breaks
-are also implicitly created anytime a new section starts.
+hardcoded (server endpoint, serial port).
 
 TODO: Send logs to our server on success and failure with both QRs
 TODO: Put logs somewhere else because /tmp get wiped on reboot
@@ -74,7 +70,7 @@ class Main(QMainWindow):
         if not is_error:
             self.ui.log_text_edit.append(f"INFO> {text}")
         else:
-            self.ui.log_text_edit.append("ERROR> {text}")
+            self.ui.log_text_edit.append(f"ERROR> {text}")
 
     def __update_scanned_codes(self, codes):
         """Updates UI with both scanned codes"""
@@ -131,7 +127,7 @@ class Main(QMainWindow):
 
     def __update_ui_failed(self, msgs):
         """Updates UI to reflect failed state"""
-        self.ui.update_status(msgs["status"], err = True)
+        self.ui.update_status(msgs["status"], is_err=True)
 
     def keyPressEvent(self, event): # pylint: disable=invalid-name
         """Listens for key presses and forward them to workflow class"""
@@ -147,7 +143,7 @@ def main():
     window = Main(server_endpoint, serial_port)
     window.show()
     # window.showFullScreen()
-    app.exec()
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main()

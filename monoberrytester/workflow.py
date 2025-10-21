@@ -90,7 +90,7 @@ class Workflow(QObject):
     def start(self):
         """Entry point to start testing"""
         if self.state != State.IDLE:
-            self.logger.info(texts.LOG_WRONG_STATE_TO_START_FROM + str(self.state))
+            self.logger.info(f"{texts.LOG_WRONG_STATE_TO_START_FROM} {self.state}")
             return
 
         self.__change_state(State.STARTED)
@@ -118,7 +118,7 @@ class Workflow(QObject):
 
         self.test_state_changed.emit(TestKeys.T1_SCAN_TWO_DM_QR_CODES, TestState.SUCCEEDED)
         self.__change_state(State.FETCHING_SERIAL_AND_MACS)
-        self.test_state_changed.emit(TestKeys.T2_CONN_TO_UART, TestState.RUNNING)
+        self.test_state_changed.emit(TestKeys.T2_FETCH_SERIAL_AND_MACS, TestState.RUNNING)
         self.server_client.set_codes(self.scanned_codes)
         self.server_client.send_qrs()
         if not self.server_thread.isRunning():
@@ -127,14 +127,14 @@ class Workflow(QObject):
 
     def connect_cables(self):
         """Prompts user to connect the rest of the cables"""
-        self.test_state_changed.emit(TestKeys.T2_CONN_TO_UART, TestState.SUCCEEDED)
+        self.test_state_changed.emit(TestKeys.T2_FETCH_SERIAL_AND_MACS, TestState.SUCCEEDED)
         self.__change_state(State.CONNECTING_CABLES)
-        self.test_state_changed.emit(TestKeys.T3_CONN_TO_UART, TestState.RUNNING)
+        self.test_state_changed.emit(TestKeys.T3_RECEIVE_DATA_VIA_UART, TestState.RUNNING)
 
     def done(self):
         """Done, all tests have successfull passed and the board is
         fully functional (according to our knowledge)"""
-        self.test_state_changed.emit(TestKeys.T3_CONN_TO_UART, TestState.SUCCEEDED)
+        self.test_state_changed.emit(TestKeys.T3_RECEIVE_DATA_VIA_UART, TestState.SUCCEEDED)
         self.__change_state(State.DONE)
         self.logger.info(texts.LOG_INFO_DONE)
 
@@ -144,7 +144,7 @@ class Workflow(QObject):
         if self.state == State.SCANNING_QR_CODES:
             self.scanner.handle_input(event.key(), event.text())
 
-    def __change_state(self, state, msgs = None):
+    def __change_state(self, state, msgs=None):
         """Helper to make sure state_changed is emited also on state change"""
         if msgs is None:
             msgs = {}
@@ -157,13 +157,13 @@ class Workflow(QObject):
         self.code_scanned.emit(self.scanned_codes)
 
         if len(self.scanned_codes) == 1:
-            self.logger.info(texts.LOG_INFO_FIRST_CODE_SCANNED + code)
+            self.logger.info(f"{texts.LOG_INFO_FIRST_CODE_SCANNED} {code}")
         elif len(self.scanned_codes) == 2:
-            self.logger.info(texts.LOG_INFO_SECOND_CODE_SCANNED + code)
+            self.logger.info(f"{texts.LOG_INFO_SECOND_CODE_SCANNED} {code}")
             self.fetch_serial_and_macs()
         else:
             self.logger.error(texts.LOG_ERROR_MORE_THAN_2_QR_SCANNED)
-            self.test_state_changed.emit("1_scan_two_dm_qr_codes", TestState.FAILED)
+            self.test_state_changed.emit(TestKeys.T1_SCAN_TWO_DM_QR_CODES, TestState.FAILED)
 
     def __handle_server_response(self, success: bool, response: str):
         """Called upon receiving a response from the server"""
@@ -171,20 +171,20 @@ class Workflow(QObject):
         self.server_thread.wait()
 
         if success:
-            self.logger.info(texts.LOG_INFO_SERVER_RESPONSE + response)
+            self.logger.info(f"{texts.LOG_INFO_SERVER_RESPONSE} {response}")
             r = response.split()
             self.serial_num = r[0]
             self.mac_addresses = r[1:]
             self.connect_cables()
         else:
-            self.logger.error(texts.LOG_INFO_SERVER_ERROR + response)
-            self.test_state_changed.emit("2_fetch_serial_and_macs", TestState.FAILED)
+            self.logger.error(f"{texts.LOG_INFO_SERVER_ERROR} {response}")
+            self.test_state_changed.emit(TestKeys.T2_FETCH_SERIAL_AND_MACS, TestState.FAILED)
 
     def __handle_server_error(self, err_msg):
         self.server_thread.quit()
         self.server_thread.wait()
 
-        self.test_state_changed.emit("2_fetch_serial_and_macs", TestState.FAILED)
+        self.test_state_changed.emit(TestKeys.T2_FETCH_SERIAL_AND_MACS, TestState.FAILED)
         self.__change_state(State.FAILED, {
             "status": texts.CONN_TO_SERVER_FAILED,
             "err_msg": err_msg
@@ -197,16 +197,16 @@ class Workflow(QObject):
 
     def __handle_serial_failed(self, err_msg):
         """Called on failed serial connection"""
-        self.logger.error(texts.LOG_ERROR_UART_FAILED + err_msg)
+        self.logger.error(f"{texts.LOG_ERROR_UART_FAILED} {err_msg}")
         self.__change_state(State.FAILED, {
             "status": texts.STATUS_CONN_TO_UART_FAILED,
             "err_msg": err_msg
         })
-        self.test_state_changed.emit("0_conn_to_uart", TestState.FAILED)
+        self.test_state_changed.emit(TestKeys.T0_CONN_TO_UART, TestState.FAILED)
 
     def __handle_serial_received_data(self, data: str):
         """Called when data is received via serial connection"""
         if self.state == State.CONNECTING_CABLES:
-            self.logger.info("Serial working. Data was received: " + data)
+            self.logger.info(f"Serial working. Data was received: {data}")
             self.__change_state(State.DONE)
             self.done()

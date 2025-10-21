@@ -143,11 +143,11 @@ class UI(QWidget):
         """Disables reset button"""
         self.reset_btn.setDisabled(True)
 
-    def update_status(self, text: str, err: bool = False):
-        """Updates status label with text and error indicator: err"""
+    def update_status(self, text: str, is_err: bool = False):
+        """Updates status label with text and error indicator: is_err"""
         self.label.setText(text)
 
-        if err:
+        if is_err:
             self.label.setStyleSheet(styles.STATUS_ERROR)
         else:
             self.label.setStyleSheet(styles.STATUS_NORMAL)
