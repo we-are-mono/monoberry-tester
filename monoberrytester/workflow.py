@@ -9,6 +9,7 @@ from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
 import texts
 from ui import TestState
+from tests import TestKeys
 
 class State(Enum):
     """Class to define states of the application"""
@@ -39,7 +40,7 @@ class Workflow(QObject):
 
     state_changed = pyqtSignal(dict)
     code_scanned = pyqtSignal(list)
-    test_state_changed = pyqtSignal(str, TestState)
+    test_state_changed = pyqtSignal(TestKeys, TestState)
 
     def __init__(
         self,
@@ -98,16 +99,16 @@ class Workflow(QObject):
     def connect_to_uart(self):
         """Tests UART connection to the board"""
         self.__change_state(State.CONNECTING_TO_UART)
-        self.test_state_changed.emit("0_conn_to_uart", TestState.RUNNING)
+        self.test_state_changed.emit(TestKeys.T0_CONN_TO_UART, TestState.RUNNING)
         self.serial.start()
 
     def scan_qr_codes(self):
         """Prompts user to scan two data matrix codes
         
         Continues in __handle_scanned_codes method"""
-        self.test_state_changed.emit("0_conn_to_uart", TestState.SUCCEEDED)
+        self.test_state_changed.emit(TestKeys.T0_CONN_TO_UART, TestState.SUCCEEDED)
         self.__change_state(State.SCANNING_QR_CODES)
-        self.test_state_changed.emit("1_scan_two_dm_qr_codes", TestState.RUNNING)
+        self.test_state_changed.emit(TestKeys.T1_SCAN_TWO_DM_QR_CODES, TestState.RUNNING)
 
     def fetch_serial_and_macs(self):
         """Connect to our server to fetch serial and MAC addresses
@@ -115,9 +116,9 @@ class Workflow(QObject):
         
         Continues in __handle_server_response method"""
 
-        self.test_state_changed.emit("1_scan_two_dm_qr_codes", TestState.SUCCEEDED)
+        self.test_state_changed.emit(TestKeys.T1_SCAN_TWO_DM_QR_CODES, TestState.SUCCEEDED)
         self.__change_state(State.FETCHING_SERIAL_AND_MACS)
-        self.test_state_changed.emit("2_fetch_serial_and_macs", TestState.RUNNING)
+        self.test_state_changed.emit(TestKeys.T2_CONN_TO_UART, TestState.RUNNING)
         self.server_client.set_codes(self.scanned_codes)
         self.server_client.send_qrs()
         if not self.server_thread.isRunning():
@@ -126,14 +127,14 @@ class Workflow(QObject):
 
     def connect_cables(self):
         """Prompts user to connect the rest of the cables"""
-        self.test_state_changed.emit("2_fetch_serial_and_macs", TestState.SUCCEEDED)
+        self.test_state_changed.emit(TestKeys.T2_CONN_TO_UART, TestState.SUCCEEDED)
         self.__change_state(State.CONNECTING_CABLES)
-        self.test_state_changed.emit("3_receive_data_via_uart", TestState.RUNNING)
+        self.test_state_changed.emit(TestKeys.T3_CONN_TO_UART, TestState.RUNNING)
 
     def done(self):
         """Done, all tests have successfull passed and the board is
         fully functional (according to our knowledge)"""
-        self.test_state_changed.emit("3_receive_data_via_uart", TestState.SUCCEEDED)
+        self.test_state_changed.emit(TestKeys.T3_CONN_TO_UART, TestState.SUCCEEDED)
         self.__change_state(State.DONE)
         self.logger.info(texts.LOG_INFO_DONE)
 
