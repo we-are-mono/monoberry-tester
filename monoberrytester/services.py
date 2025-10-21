@@ -10,16 +10,12 @@ from datetime import datetime
 import logging
 import requests
 import serial
+import urllib
 
 from PyQt5.QtCore import Qt, QObject, QThread, pyqtSignal
-from PyQt5.QtWidgets import QTextEdit
 
 class LoggingService(QObject):
-    """Class for logging into a file and on screen to QTextEdit widget
-    
-    Args:
-        text_widget (QTextEdit): Text field to append log statements to
-    """
+    """Class for logging into a file and on screen to QTextEdit widget"""
 
     logline_received = pyqtSignal(str, bool) # text line, error
 
@@ -40,7 +36,8 @@ class LoggingService(QObject):
 
     def __generate_log_filename(self):
         """Generates a log filename based on current time."""
-        return "/tmp/mbt-" + datetime.now().strftime('%Y-%m-%d-%H-%M-%S') + ".log"
+        time_str = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
+        return f"/tmp/mbt-{time_str}.log"
 
     def __init_logging(self, filename):
         """Sets up logging"""
@@ -109,7 +106,8 @@ class ServerClient(QObject):
 
     def run(self):
         """Runs the thread and fetches serial and MACs from our server"""
-        url = self.server_endpoint + "/" + self.path
+        print("Server client run...")
+        url = urllib.parse.urljoin(self.server_endpoint, self.path)
         try:
             r = requests.request(method = self.method.upper(), url = url, params = self.request_params)
 

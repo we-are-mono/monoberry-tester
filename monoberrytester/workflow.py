@@ -72,6 +72,7 @@ class Workflow(QObject):
 
         self.server_thread = QThread()
         self.server_client.moveToThread(self.server_thread)
+        self.server_thread.started.connect(self.server_client.run)
 
     def reset(self):
         """Resets back to idle state in order to do retry upon failure"""
@@ -119,7 +120,9 @@ class Workflow(QObject):
         self.test_state_changed.emit("2_fetch_serial_and_macs", TestState.RUNNING)
         self.server_client.set_codes(self.scanned_codes)
         self.server_client.send_qrs()
-        self.server_thread.start()
+        if not self.server_thread.isRunning():
+            self.server_thread.start()
+
 
     def connect_cables(self):
         """Prompts user to connect the rest of the cables"""
@@ -163,6 +166,9 @@ class Workflow(QObject):
 
     def __handle_server_response(self, success: bool, response: str):
         """Called upon receiving a response from the server"""
+        self.server_thread.quit()
+        self.server_thread.wait()
+
         if success:
             self.logger.info(texts.LOG_INFO_SERVER_RESPONSE + response)
             r = response.split()
@@ -174,6 +180,9 @@ class Workflow(QObject):
             self.test_state_changed.emit("2_fetch_serial_and_macs", TestState.FAILED)
 
     def __handle_server_error(self, err_msg):
+        self.server_thread.quit()
+        self.server_thread.wait()
+
         self.test_state_changed.emit("2_fetch_serial_and_macs", TestState.FAILED)
         self.__change_state(State.FAILED, {
             "status": texts.CONN_TO_SERVER_FAILED,

@@ -65,7 +65,7 @@ class UI(QWidget):
         test_defs (dict): dictionary of test names and descriptions
     """
 
-    def __init__(self, test_defs):
+    def __init__(self, test_defs: dict):
         super().__init__()
         self.tests = self.__init_tests_widgets(test_defs)
         self.__init_ui()
@@ -84,18 +84,18 @@ class UI(QWidget):
         self.label.setContentsMargins(8, 16, 0, 16)
 
         self.dm_qr_group = QGroupBox()
-        self.dm_gr_group_layout = QVBoxLayout()
+        self.dm_qr_group_layout = QVBoxLayout()
         self.dm_qr_label_top = QLabel(texts.UI_LABEL_TOP_QR)
         self.dm_qr_line_edit_top = QLineEdit()
         self.dm_qr_line_edit_top.setDisabled(True)
         self.dm_qr_label_bottom = QLabel(texts.UI_LABEL_BOTTOM_QR)
         self.dm_qr_line_edit_bottom = QLineEdit()
         self.dm_qr_line_edit_bottom.setDisabled(True)
-        self.dm_gr_group_layout.addWidget(self.dm_qr_label_top)
-        self.dm_gr_group_layout.addWidget(self.dm_qr_line_edit_top)
-        self.dm_gr_group_layout.addWidget(self.dm_qr_label_bottom)
-        self.dm_gr_group_layout.addWidget(self.dm_qr_line_edit_bottom)
-        self.dm_qr_group.setLayout(self.dm_gr_group_layout)
+        self.dm_qr_group_layout.addWidget(self.dm_qr_label_top)
+        self.dm_qr_group_layout.addWidget(self.dm_qr_line_edit_top)
+        self.dm_qr_group_layout.addWidget(self.dm_qr_label_bottom)
+        self.dm_qr_group_layout.addWidget(self.dm_qr_line_edit_bottom)
+        self.dm_qr_group.setLayout(self.dm_qr_group_layout)
 
         self.log_text_edit = QTextEdit()
         self.log_text_edit.setDisabled(True)
@@ -119,7 +119,7 @@ class UI(QWidget):
         layout.addLayout(right_panel, stretch=2)
         self.setLayout(layout)
 
-    def __init_tests_widgets(self, test_defs):
+    def __init_tests_widgets(self, test_defs: dict) -> dict:
         """Create UI for tests"""
         test_widgets = {}
         for name, desc in test_defs.items():
@@ -143,7 +143,7 @@ class UI(QWidget):
         """Disables reset button"""
         self.reset_btn.setDisabled(True)
 
-    def update_status(self, text, err=False):
+    def update_status(self, text: str, err: bool = False):
         """Updates status label with text and error indicator: err"""
         self.label.setText(text)
 

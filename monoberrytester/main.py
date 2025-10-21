@@ -72,9 +72,9 @@ class Main(QMainWindow):
 
     def __update_logs_ui(self, text, is_error):
         if not is_error:
-            self.ui.log_text_edit.append("INFO> " + text)
+            self.ui.log_text_edit.append(f"INFO> {text}")
         else:
-            self.ui.log_text_edit.append("ERROR> " + text)
+            self.ui.log_text_edit.append("ERROR> {text}")
 
     def __update_scanned_codes(self, codes):
         """Updates UI with both scanned codes"""
