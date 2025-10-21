@@ -1,6 +1,8 @@
 """
 Collection of services for external communication 
 like serial, http, logs, barcode scanner, ...
+
+TODO: replace with actual code when I get the barcode scanner
 """
 
 from datetime import datetime
@@ -47,7 +49,6 @@ class LoggingService(QObject):
             format      = '%(asctime)s - %(message)s'
         )
 
-# TODO: replace with actual code when I get the barcode scanner
 class ScannerService(QObject):
     """Class that handles communication with the USB barcode scanner
     
@@ -148,7 +149,6 @@ class SerialService(QThread):
                     line = self.serial.readline().decode().strip()
                     if line:
                         self.received_data.emit(line)
-                        print("S> " + line)
                 except serial.SerialException as e:
                     if self.running:
                         self.failed.emit(str(e))
@@ -164,6 +164,7 @@ class SerialService(QThread):
                 except serial.SerialException as _:
                     pass
             self.running = False
+            self.serial = None
 
     def stop(self):
         """Stops the connection and waits for thread to finish"""
@@ -173,6 +174,8 @@ class SerialService(QThread):
                 self.serial.close()
             except serial.SerialException as _:
                 pass
+
+        self.serial = None
 
         if self.isRunning():
             self.wait(1000)

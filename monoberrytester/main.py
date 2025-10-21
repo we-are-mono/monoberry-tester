@@ -14,6 +14,9 @@ hardcoded (server endpoint, serial port). In production run it like this:
 
 Section breaks are created by resuming unindented text. Section breaks
 are also implicitly created anytime a new section starts.
+
+TODO: Send logs to our server on success and failure with both QRs
+TODO: Put logs somewhere else because /tmp get wiped on reboot
 -----
 """
 
