@@ -46,12 +46,13 @@ class Main(QMainWindow):
         self.resize(1280, 720)
 
         # Init services
-        self.logger         = LoggingService(self.ui.log_text_edit)
+        self.logger         = LoggingService()
         self.serial         = SerialService(serial_port)
         self.scanner        = ScannerService()
         self.server_client  = ServerClient(server_endpoint, self.logger)
         self.workflow       = Workflow(self.logger, self.serial, self.scanner, self.server_client)
 
+        self.logger.logline_received.connect(self.__update_logs_ui)
         self.ui.start_btn.clicked.connect(self.workflow.start)
         self.ui.reset_btn.clicked.connect(self.workflow.reset)
         self.workflow.code_scanned.connect(self.__update_scanned_codes)
@@ -68,6 +69,12 @@ class Main(QMainWindow):
             State.DONE:                     self.__update_ui_done,
             State.FAILED:                   self.__update_ui_failed
         }
+
+    def __update_logs_ui(self, text, is_error):
+        if not is_error:
+            self.ui.log_text_edit.append("INFO> " + text)
+        else:
+            self.ui.log_text_edit.append("ERROR> " + text)
 
     def __update_scanned_codes(self, codes):
         """Updates UI with both scanned codes"""

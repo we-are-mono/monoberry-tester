@@ -21,20 +21,21 @@ class LoggingService(QObject):
         text_widget (QTextEdit): Text field to append log statements to
     """
 
-    def __init__(self, text_widget: QTextEdit):
+    logline_received = pyqtSignal(str, bool) # text line, error
+
+    def __init__(self):
         super().__init__()
-        self.text_widget = text_widget
         self.filename = self.__generate_log_filename()
         self.__init_logging(self.filename)
 
     def info(self, text):
         """Logs text as info"""
-        self.text_widget.append("INFO > " + text)
+        self.logline_received.emit(text, False)
         logging.info(text)
 
     def error(self, text):
         """Logs text as error"""
-        self.text_widget.append("ERROR > " + text)
+        self.logline_received.emit(text, True)
         logging.error(text)
 
     def __generate_log_filename(self):
