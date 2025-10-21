@@ -71,7 +71,7 @@ class ScannerService(QObject):
         elif text:
             self.buffer += text
 
-class ServerClient(QThread):
+class ServerClient(QObject):
     # pylint: disable=line-too-long
     """HTTP Client to call our server
 
@@ -93,6 +93,9 @@ class ServerClient(QThread):
         self.server_endpoint = server_endpoint
         self.qr1 = None
         self.qr2 = None
+        self.method = None
+        self.path = None
+        self.request_params = {}
 
     def set_codes(self, codes):
         """
@@ -101,11 +104,15 @@ class ServerClient(QThread):
         self.qr1 = codes[0]
         self.qr2 = codes[1]
 
+    def send_qrs(self):
+        self.__config_request("GET", "/serial-macs", {"qr1": self.qr1, "qr2": self.qr2})
+
     def run(self):
         """Runs the thread and fetches serial and MACs from our server"""
-        url = self.server_endpoint + "/getserial?qr1=" + self.qr1 + "&qr2=" + self.qr2
+        url = self.server_endpoint + "/" + self.path
         try:
-            r = requests.get(url, timeout = 10)
+            r = requests.request(method = self.method.upper(), url = url, params = self.request_params)
+
             if r.status_code != 200:
                 self.response_received.emit(False, r.text)
             else:
@@ -113,6 +120,11 @@ class ServerClient(QThread):
         except requests.RequestException as e:
             self.error_occured.emit(str(e))
             self.logger.error(str(e))
+
+    def __config_request(self, method: str, path: str, request_params: dict):
+        self.method = method
+        self.path = path
+        self.request_params = request_params
 
 class SerialService(QThread):
     """UART client to communicate with our BUTT (board under test tool)

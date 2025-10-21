@@ -5,7 +5,7 @@ All 'business' logic
 """
 
 from enum import Enum, auto
-from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
 import texts
 from ui import TestState
@@ -70,6 +70,9 @@ class Workflow(QObject):
         self.serial.failed.connect(self.__handle_serial_failed)
         self.serial.received_data.connect(self.__handle_serial_received_data)
 
+        self.server_thread = QThread()
+        self.server_client.moveToThread(self.server_thread)
+
     def reset(self):
         """Resets back to idle state in order to do retry upon failure"""
         self.logger.info("--- Reseting ---")
@@ -115,7 +118,8 @@ class Workflow(QObject):
         self.__change_state(State.FETCHING_SERIAL_AND_MACS)
         self.test_state_changed.emit("2_fetch_serial_and_macs", TestState.RUNNING)
         self.server_client.set_codes(self.scanned_codes)
-        self.server_client.start()
+        self.server_client.send_qrs()
+        self.server_thread.start()
 
     def connect_cables(self):
         """Prompts user to connect the rest of the cables"""
