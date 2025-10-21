@@ -110,7 +110,7 @@ class UI(QWidget):
         left_panel.addWidget(self.log_text_edit)
         left_panel.addWidget(self.start_btn)
 
-        for _, t in self.tests.items():
+        for t in self.tests.values():
             right_panel.addWidget(t)
 
         right_panel.addStretch()
@@ -122,8 +122,7 @@ class UI(QWidget):
     def __init_tests_widgets(self, test_defs):
         """Create UI for tests"""
         test_widgets = {}
-        for name in test_defs:
-            desc = test_defs[name]
+        for name, desc in test_defs.items():
             test_widgets[name] = TestWidget(desc)
 
         return test_widgets
@@ -179,5 +178,5 @@ class UI(QWidget):
 
     def mark_all_tests_idle(self):
         """Marks all tests as idle (on reset for example)"""
-        for _, t in self.tests.items():
+        for t in self.tests.values():
             t.set_idle()
