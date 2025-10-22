@@ -174,20 +174,13 @@ class SerialService(QThread):
                 try:
                     self.serial.close()
                 except serial.SerialException as e:
-                    self.failed.emit(str(e))
+                    pass
             self.running = False
             self.serial = None
 
     def stop(self):
         """Stops the connection and waits for thread to finish"""
-        if self.serial and self.serial.is_open:
-            try:
-                self.serial.close()
-            except serial.SerialException as _:
-                pass
-
         self.running = False
-        self.serial = None
 
         if self.isRunning():
             self.wait(THREAD_WAIT_TIMEOUT_MS)

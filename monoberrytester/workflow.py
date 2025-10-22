@@ -81,9 +81,7 @@ class Workflow(QObject):
         self.scanned_codes = []
         self.mac_addresses = []
         self.serial_num = None
-
-        if self.serial.isRunning():
-            self.serial.stop()
+        self.serial.stop()
 
         self.__change_state(State.IDLE)
 
