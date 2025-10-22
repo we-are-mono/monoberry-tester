@@ -49,7 +49,8 @@ class Workflow(QObject):
         logging_service: LoggingService,
         serial_service: SerialService,
         scanner_service: ScannerService,
-        server_client: ServerClient
+        server_client: ServerClient,
+        serial_controller: SerialController
     ):
         super().__init__()
 
@@ -60,10 +61,11 @@ class Workflow(QObject):
         self.serial_num     = None
 
         # Services
-        self.logger         = logging_service
-        self.serial         = serial_service
-        self.scanner        = scanner_service
-        self.server_client  = server_client
+        self.logger             = logging_service
+        self.serial             = serial_service
+        self.scanner            = scanner_service
+        self.server_client      = server_client
+        self.serial_controller  = serial_controller
 
         # Connect to external services signals
         self.scanner.code_received.connect(self.__handle_scanned_codes)
@@ -71,8 +73,8 @@ class Workflow(QObject):
         self.server_client.error_occured.connect(self.__handle_server_error)
         self.serial.connected.connect(self.__handle_serial_connected)
         self.serial.error_occurred.connect(self.__handle_serial_error_occured)
-        self.serial.line_received.connect(self.__handle_serial_line_received)
         self.serial.line_received.connect(self.__log_serial)
+        # self.serial.line_received.connect(self.__handle_serial_line_received)
 
         self.server_thread = QThread()
         self.server_client.moveToThread(self.server_thread)
@@ -138,6 +140,7 @@ class Workflow(QObject):
         self.test_state_changed.emit(TestKeys.T2_FETCH_SERIAL_AND_MACS, TestState.SUCCEEDED)
         self.__change_state(State.CONNECTING_CABLES)
         self.test_state_changed.emit(TestKeys.T3_RECEIVE_DATA_VIA_UART, TestState.RUNNING)
+        self.serial_controller.wait_for("", self.__handle_serial_line_received)
 
     def done(self):
         """Done, all tests have successfull passed and the board is
@@ -212,13 +215,12 @@ class Workflow(QObject):
         })
         self.test_state_changed.emit(TestKeys.T0_CONN_TO_UART, TestState.FAILED)
 
-    def __handle_serial_line_received(self, _):
+    def __handle_serial_line_received(self):
         """Called when data is received via serial connection"""
         if self.state == State.CONNECTING_CABLES:
             self.logger.info(texts.LOG_INFO_UART_DATA_RECEIVED)
             self.__change_state(State.DONE)
             self.done()
-            self.serial.send("Thanks dude!")
 
     def __log_serial(self, data: str):
         self.logger.info("S> " + data, False)

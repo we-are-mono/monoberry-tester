@@ -23,7 +23,7 @@ from PyQt5.QtWidgets import QApplication, QMainWindow
 import texts
 from ui import UI
 from workflow import State, Workflow
-from services import LoggingService, ScannerService, SerialService, ServerClient
+from services import *
 from tests import TEST_DEFS
 
 class Main(QMainWindow):
@@ -42,11 +42,18 @@ class Main(QMainWindow):
         self.resize(1280, 720)
 
         # Init services
-        self.logger         = LoggingService()
-        self.serial         = SerialService(serial_port)
-        self.scanner        = ScannerService()
-        self.server_client  = ServerClient(server_endpoint, self.logger)
-        self.workflow       = Workflow(self.logger, self.serial, self.scanner, self.server_client)
+        self.logger             = LoggingService()
+        self.serial             = SerialService(serial_port)
+        self.serial_controller  = SerialController(self.serial)
+        self.scanner            = ScannerService()
+        self.server_client      = ServerClient(server_endpoint, self.logger)
+        self.workflow           = Workflow(
+                                    self.logger,
+                                    self.serial,
+                                    self.scanner,
+                                    self.server_client,
+                                    self.serial_controller
+                                )
 
         self.logger.logline_received.connect(self.__update_logs_ui)
         self.ui.start_btn.clicked.connect(self.workflow.start)

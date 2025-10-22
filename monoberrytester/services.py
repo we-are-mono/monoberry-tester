@@ -176,7 +176,26 @@ class SerialService(QObject):
 
         self.serial_port.close()
 
-class SerialController():
-    def __init__(self):
-        pass
+class SerialController(QObject):
+    """Serial controller to make working with UART easier"""
 
+    def __init__(self, serial_service: SerialService):
+        super().__init__()
+        self.serial_service = serial_service
+        self.serial_service.line_received.connect(self.__on_line_received)
+        self.wait_text = None
+        self.callback = None
+
+    def wait_for(self, wait_text, callback) -> bool:
+        if self.wait_text or self.callback:
+            # TODO: something that indicates we can't wait since we're already waiting.
+            return False
+        else:
+            self.wait_text = wait_text
+            self.callback = callback
+
+    def __on_line_received(self, line):
+        if self.wait_text is not None and self.wait_text in line:
+            self.callback()
+            self.wait_text = None
+            self.callback = None
