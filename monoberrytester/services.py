@@ -10,6 +10,7 @@ from datetime import datetime
 import logging
 import requests
 import urllib
+from queue import Queue
 
 from PyQt5.QtSerialPort import QSerialPort
 from PyQt5.QtCore import Qt, QObject, QIODevice, pyqtSignal
@@ -21,21 +22,21 @@ THREAD_WAIT_TIMEOUT_MS = 1000
 class LoggingService(QObject):
     """Class for logging into a file and on screen to QTextEdit widget"""
 
-    logline_received = pyqtSignal(str, bool) # text line, error
+    logline_received = pyqtSignal(str, bool, bool) # text line, error, should_display
 
     def __init__(self):
         super().__init__()
         self.filename = self.__generate_log_filename()
         self.__init_logging(self.filename)
 
-    def info(self, text):
+    def info(self, text, should_display=True):
         """Logs text as info"""
-        self.logline_received.emit(text, False)
+        self.logline_received.emit(text, False, should_display)
         logging.info(text)
 
-    def error(self, text):
+    def error(self, text, should_display=True):
         """Logs text as error"""
-        self.logline_received.emit(text, True)
+        self.logline_received.emit(text, True, should_display)
         logging.error(text)
 
     def __generate_log_filename(self):
@@ -136,20 +137,24 @@ class SerialService(QObject):
 
     def __init__(self, port_name, baud_rate = 115200):
         super().__init__()
-        self.serial_port = QSerialPort()
-        self.serial_port.setPortName(port_name)
-        self.serial_port.setBaudRate(baud_rate)
+        self.port_name = port_name
+        self.baud_rate = baud_rate
+        self.write_queue = Queue()
 
-    def open(self):
-        return self.serial_port.open(QIODevice.ReadWrite)
-    
-    def close(self):
-        if self.serial_port.isOpen():
-            self.serial_port.close()
-
+    def stop(self):
         self.is_running = False
 
+    def send(self, data: str):
+        if self.serial_port.isOpen():
+            self.write_queue.put(data)
+        else:
+            self.error_occurred.emit(texts.LOG_ERROR_UART_WRITE_NOT_OPEN)
+
     def run(self):
+        self.serial_port = QSerialPort()
+        self.serial_port.setPortName(self.port_name)
+        self.serial_port.setBaudRate(self.baud_rate)
+
         if not self.serial_port.open(QSerialPort.ReadWrite):
             self.error_occurred.emit(f"{texts.STATUS_CONN_TO_UART_FAILED} {self.serial_port.errorString()}")
             return
@@ -159,7 +164,8 @@ class SerialService(QObject):
 
         while self.is_running:
             if self.serial_port.waitForReadyRead(100):
-                line = self.serial_port.readLine()
-                self.line_received.emit(str(line))
+                line = bytes(self.serial_port.readLine()).decode('utf-8', errors='ignore').strip()
+                if line:
+                    self.line_received.emit(str(line))
 
         self.serial_port.close()

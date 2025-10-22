@@ -66,7 +66,10 @@ class Main(QMainWindow):
             State.FAILED:                   self.__update_ui_failed
         }
 
-    def __update_logs_ui(self, text, is_error):
+    def __update_logs_ui(self, text, is_error, should_display):
+        if not should_display:
+            return
+
         if not is_error:
             self.ui.log_text_edit.append(f"INFO> {text}")
         else:

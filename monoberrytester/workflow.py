@@ -72,6 +72,7 @@ class Workflow(QObject):
         self.serial.connected.connect(self.__handle_serial_connected)
         self.serial.error_occurred.connect(self.__handle_serial_error_occured)
         self.serial.line_received.connect(self.__handle_serial_line_received)
+        self.serial.line_received.connect(self.__log_serial)
 
         self.server_thread = QThread()
         self.server_client.moveToThread(self.server_thread)
@@ -88,6 +89,8 @@ class Workflow(QObject):
         self.mac_addresses = []
         self.serial_num = None
         self.serial.stop()
+        self.serial_thread.quit()
+        self.serial_thread.wait()
 
         self.__change_state(State.IDLE)
 
@@ -108,7 +111,7 @@ class Workflow(QObject):
 
     def scan_qr_codes(self):
         """Prompts user to scan two data matrix codes
-        
+
         Continues in __handle_scanned_codes method"""
         self.test_state_changed.emit(TestKeys.T0_CONN_TO_UART, TestState.SUCCEEDED)
         self.__change_state(State.SCANNING_QR_CODES)
@@ -208,9 +211,13 @@ class Workflow(QObject):
         })
         self.test_state_changed.emit(TestKeys.T0_CONN_TO_UART, TestState.FAILED)
 
-    def __handle_serial_line_received(self, data: str):
+    def __handle_serial_line_received(self, _):
         """Called when data is received via serial connection"""
         if self.state == State.CONNECTING_CABLES:
-            self.logger.info(f"Serial working. Data was received: {data}")
+            self.logger.info(texts.LOG_INFO_UART_DATA_RECEIVED)
             self.__change_state(State.DONE)
             self.done()
+            self.serial.send("Thanks dude!")
+
+    def __log_serial(self, data: str):
+        self.logger.info("S> " + data, False)
