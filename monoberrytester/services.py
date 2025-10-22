@@ -9,10 +9,12 @@ from datetime import datetime
 
 import logging
 import requests
-import serial
 import urllib
 
-from PyQt5.QtCore import Qt, QObject, QThread, pyqtSignal
+from PyQt5.QtSerialPort import QSerialPort
+from PyQt5.QtCore import Qt, QObject, QIODevice, pyqtSignal
+
+import texts
 
 THREAD_WAIT_TIMEOUT_MS = 1000
 
@@ -125,62 +127,39 @@ class ServerClient(QObject):
         self.path = path
         self.request_params = request_params
 
-class SerialService(QThread):
-    """UART client to communicate with our BUTT (board under testing tool)
-
-    Attributes:
-        connected (pyqtSignal): Signals when UART is successfully connected
-        failed (pyqtSignal): Signals when there's an error connecting to UART
-        received_data (pyqtSignal): Signals when data is received via UART
-
-    Args:
-        port (str): Path to device (TTY) on disk to connect to
-    """
+class SerialService(QObject):
+    """Serial service to comminucate with the board via UART"""
 
     connected = pyqtSignal()
-    failed = pyqtSignal(str)
-    received_data = pyqtSignal(str)
+    error_occurred = pyqtSignal()
+    line_received = pyqtSignal(str)
 
-    def __init__(self, port):
+    def __init__(self, port_name, baud_rate = 115200):
         super().__init__()
-        self.timeout = 0.2
-        self.port = port
-        self.baudrate = 115200
-        self.running = False
-        self.serial = None
+        self.serial_port = QSerialPort()
+        self.serial_port.setPortName(port_name)
+        self.serial_port.setBaudRate(baud_rate)
+
+    def open(self):
+        return self.serial_port.open(QIODevice.ReadWrite)
+    
+    def close(self):
+        if self.serial_port.isOpen():
+            self.serial_port.close()
+
+        self.is_running = False
 
     def run(self):
-        """Connects to UART and starts reading data"""
-        try:
-            self.serial = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
-            self.connected.emit()
-            self.running = True
+        if not self.serial_port.open(QSerialPort.ReadWrite):
+            self.error_occurred.emit(f"{texts.STATUS_CONN_TO_UART_FAILED} {self.serial_port.errorString()}")
+            return
 
-            while self.running:
-                try:
-                    line = self.serial.readline().decode().strip()
-                    if line:
-                        self.received_data.emit(line)
-                except serial.SerialException as e:
-                    if self.running:
-                        self.failed.emit(str(e))
-                        break
-                self.msleep(10)
+        self.is_running = True
+        self.connected.emit()
 
-        except serial.SerialException as e:
-            self.failed.emit(str(e))
-        finally:
-            if self.serial and self.serial.is_open:
-                try:
-                    self.serial.close()
-                except serial.SerialException as e:
-                    pass
-            self.running = False
-            self.serial = None
+        while self.is_running:
+            if self.serial_port.waitForReadyRead(100):
+                line = self.serial_port.readLine()
+                self.line_received.emit(str(line))
 
-    def stop(self):
-        """Stops the connection and waits for thread to finish"""
-        self.running = False
-
-        if self.isRunning():
-            self.wait(THREAD_WAIT_TIMEOUT_MS)
+        self.serial_port.close()

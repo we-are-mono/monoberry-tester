@@ -11,6 +11,8 @@ import texts
 from ui import TestState
 from tests import TestKeys
 
+from services import *
+
 class State(Enum):
     """Class to define states of the application"""
     IDLE                        = auto()
@@ -44,10 +46,10 @@ class Workflow(QObject):
 
     def __init__(
         self,
-        logging_service,
-        serial_service,
-        scanner_service,
-        server_client
+        logging_service: LoggingService,
+        serial_service: SerialService,
+        scanner_service: ScannerService,
+        server_client: ServerClient
     ):
         super().__init__()
 
@@ -68,12 +70,16 @@ class Workflow(QObject):
         self.server_client.response_received.connect(self.__handle_server_response)
         self.server_client.error_occured.connect(self.__handle_server_error)
         self.serial.connected.connect(self.__handle_serial_connected)
-        self.serial.failed.connect(self.__handle_serial_failed)
-        self.serial.received_data.connect(self.__handle_serial_received_data)
+        self.serial.error_occurred.connect(self.__handle_serial_error_occured)
+        self.serial.line_received.connect(self.__handle_serial_line_received)
 
         self.server_thread = QThread()
         self.server_client.moveToThread(self.server_thread)
         self.server_thread.started.connect(self.server_client.run)
+
+        self.serial_thread = QThread()
+        self.serial.moveToThread(self.serial_thread)
+        self.serial_thread.started.connect(self.serial.run)
 
     def reset(self):
         """Resets back to idle state in order to do retry upon failure"""
@@ -98,7 +104,7 @@ class Workflow(QObject):
         """Tests UART connection to the board"""
         self.__change_state(State.CONNECTING_TO_UART)
         self.test_state_changed.emit(TestKeys.T0_CONN_TO_UART, TestState.RUNNING)
-        self.serial.start()
+        self.serial_thread.start()
 
     def scan_qr_codes(self):
         """Prompts user to scan two data matrix codes
@@ -193,7 +199,7 @@ class Workflow(QObject):
         self.logger.info(texts.LOG_INFO_UART_CONNECTED)
         self.scan_qr_codes()
 
-    def __handle_serial_failed(self, err_msg):
+    def __handle_serial_error_occured(self, err_msg):
         """Called on failed serial connection"""
         self.logger.error(f"{texts.LOG_ERROR_UART_FAILED} {err_msg}")
         self.__change_state(State.FAILED, {
@@ -202,7 +208,7 @@ class Workflow(QObject):
         })
         self.test_state_changed.emit(TestKeys.T0_CONN_TO_UART, TestState.FAILED)
 
-    def __handle_serial_received_data(self, data: str):
+    def __handle_serial_line_received(self, data: str):
         """Called when data is received via serial connection"""
         if self.state == State.CONNECTING_CABLES:
             self.logger.info(f"Serial working. Data was received: {data}")
