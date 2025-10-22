@@ -26,8 +26,10 @@ class LoggingService(QObject):
 
     def __init__(self):
         super().__init__()
-        self.filename = self.__generate_log_filename()
-        self.__init_logging(self.filename)
+        self.__init_logging()
+
+    def reinit(self):
+        self.__init_logging()
 
     def info(self, text, should_display=True):
         """Logs text as info"""
@@ -39,18 +41,22 @@ class LoggingService(QObject):
         self.logline_received.emit(text, True, should_display)
         logging.error(text)
 
-    def __generate_log_filename(self):
-        """Generates a log filename based on current time."""
+    def __init_logging(self):
         time_str = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
-        return f"/tmp/mbt-{time_str}.log"
+        filename = f"/tmp/mbt-{time_str}.log"
 
-    def __init_logging(self, filename):
-        """Sets up logging"""
-        logging.basicConfig(
-            filename=filename,
-            level=logging.INFO,
-            format='%(asctime)s - %(message)s'
-        )
+        logger = logging.getLogger()
+
+        for handler in logger.handlers[:]:
+                handler.close()
+                logger.removeHandler(handler)
+
+        handler = logging.FileHandler(filename)
+        formatter = logging.Formatter('%(asctime)s - %(message)s')
+        handler.setFormatter(formatter)
+        handler.setLevel(logging.INFO)
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
 
 class ScannerService(QObject):
     """Class that handles communication with the USB barcode scanner
@@ -169,3 +175,8 @@ class SerialService(QObject):
                     self.line_received.emit(str(line))
 
         self.serial_port.close()
+
+class SerialController():
+    def __init__(self):
+        pass
+

@@ -88,6 +88,7 @@ class Workflow(QObject):
         self.scanned_codes = []
         self.mac_addresses = []
         self.serial_num = None
+        self.logger.reinit()
         self.serial.stop()
         self.serial_thread.quit()
         self.serial_thread.wait()
