@@ -13,7 +13,7 @@ import urllib
 from queue import Queue
 
 from PyQt5.QtSerialPort import QSerialPort
-from PyQt5.QtCore import Qt, QObject, QIODevice, pyqtSignal
+from PyQt5.QtCore import Qt, QObject, pyqtSignal
 
 import texts
 
@@ -185,17 +185,13 @@ class SerialController(QObject):
         self.serial_service.line_received.connect(self.__on_line_received)
         self.wait_text = None
         self.callback = None
+        self.waiting_list = []
 
     def wait_for(self, wait_text, callback) -> bool:
-        if self.wait_text or self.callback:
-            # TODO: something that indicates we can't wait since we're already waiting.
-            return False
-        else:
-            self.wait_text = wait_text
-            self.callback = callback
+        self.waiting_list.append((wait_text, callback))
 
     def __on_line_received(self, line):
-        if self.wait_text is not None and self.wait_text in line:
-            self.callback()
-            self.wait_text = None
-            self.callback = None
+        for (text, callback) in self.waiting_list:
+            if text in line:
+                self.waiting_list.remove((text, callback))
+                callback()
