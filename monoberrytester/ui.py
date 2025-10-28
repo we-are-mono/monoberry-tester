@@ -101,7 +101,11 @@ class UI(QWidget):
         self.log_text_edit.setDisabled(True)
 
         self.start_btn = QPushButton(texts.UI_START_BTN_LABEL_START)
+        self.start_btn.setMinimumHeight(64)
+        self.start_btn.setStyleSheet(styles.START_BTN_IDLE)
         self.reset_btn.setEnabled(False)
+        self.reset_btn.setMinimumHeight(64)
+        self.reset_btn.setStyleSheet(styles.RESET_BTN)
 
         # Assemble UI
         left_panel.addWidget(self.reset_btn)
