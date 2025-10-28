@@ -169,8 +169,8 @@ class SerialService(QObject):
         self.connected.emit()
 
         while self.is_running:
-            if self.serial_port.waitForReadyRead(100):
-                line = bytes(self.serial_port.readLine()).decode('utf-8', errors='ignore').strip()
+            if self.serial_port.waitForReadyRead(10):
+                line = bytes(self.serial_port.readAll()).decode('utf-8', errors='ignore').strip()
                 if line:
                     self.line_received.emit(str(line))
 

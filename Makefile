@@ -5,3 +5,7 @@ lint:
 
 run:
 	python3 monoberrytester/main.py $(server_url) $(uart_dev)
+
+deploy:
+	rsync -av --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' --exclude='.venv' \
+	  . mono@monoberry:~/Apps/monoberry-tester
