@@ -138,7 +138,7 @@ class SerialService(QObject):
     """Serial service to comminucate with the board via UART"""
 
     connected = pyqtSignal()
-    error_occurred = pyqtSignal()
+    error_occurred = pyqtSignal(str)
     line_received = pyqtSignal(str)
 
     def __init__(self, port_name, baud_rate = 115200):
