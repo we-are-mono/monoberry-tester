@@ -138,7 +138,7 @@ class SerialService(QObject):
     """Serial service to comminucate with the board via UART"""
 
     connected = pyqtSignal()
-    error_occurred = pyqtSignal(str)
+    error_occurred = pyqtSignal()
     line_received = pyqtSignal(str)
 
     def __init__(self, port_name, baud_rate = 115200):
@@ -174,6 +174,11 @@ class SerialService(QObject):
                 if line:
                     self.line_received.emit(str(line))
 
+            while not self.write_queue.empty():
+                data = self.write_queue.get()
+                self.serial_port.write(data.encode('utf-8'))
+                self.serial_port.flush()
+
         self.serial_port.close()
 
 class SerialController(QObject):
@@ -190,8 +195,19 @@ class SerialController(QObject):
     def wait_for(self, wait_text, callback) -> bool:
         self.waiting_list.append((wait_text, callback))
 
+    def wait_for_and_send(self, wait_text, send_text, callback) -> bool:
+        self.waiting_list.append((wait_text, callback, send_text))
+
     def __on_line_received(self, line):
-        for (text, callback) in self.waiting_list:
-            if text in line:
-                self.waiting_list.remove((text, callback))
+        for wait_item in self.waiting_list:
+            wait_text, callback, send_text = None, None, None
+            if len(wait_item) == 2:
+                wait_text, callback = wait_item
+            else:
+                wait_text, callback, send_text = wait_item
+            
+            if wait_text in line:
+                self.waiting_list.remove(wait_item)
+                if send_text:
+                    self.serial_service.send(send_text)
                 callback()

@@ -142,7 +142,7 @@ class Workflow(QObject):
     def wait_for_uboot(self):
         """Wait for u-boot prompt"""
         self.test_state_changed.emit(TestKeys.T3_RECEIVE_DATA_VIA_UART, TestState.SUCCEEDED)
-        self.serial_controller.wait_for("stop autoboot", self.done)
+        self.serial_controller.wait_for_and_send("stop autoboot", "STOP!\r\n", self.done)
         self.test_state_changed.emit(TestKeys.T4_RECEIVE_UBOOT_PROMPT, TestState.RUNNING)
 
     def done(self):
