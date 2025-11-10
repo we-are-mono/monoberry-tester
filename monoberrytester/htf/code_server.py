@@ -1,9 +1,11 @@
 from openhtf.core import base_plugs
+from openhtf.util import configuration
 import requests
 
+configuration.CONF.declare('code_server_endpoint')
 
 class CodeServer(base_plugs.BasePlug):
-    @configuration.inject_positional_args
+    @configuration.CONF.inject_positional_args
     def __init__(self, code_server_endpoint: str):
         self._endpoint = code_server_endpoint
 

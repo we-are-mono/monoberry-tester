@@ -1,7 +1,7 @@
 .PHONY: docs lint run
 
 lint:
-	uv tool pylint --extension-pkg-whitelist=openhtf monoberrytester --exit-zero
+	uv tool run pylint --extension-pkg-whitelist=openhtf main --exit-zero
 
 run:
 	uv run main.py

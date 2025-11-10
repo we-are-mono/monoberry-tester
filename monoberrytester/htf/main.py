@@ -1,3 +1,4 @@
+import argparse
 import tempfile
 import time
 import os
@@ -19,7 +20,7 @@ CONF = configuration.CONF
 @plugs.plug(server=code_server.CodeServer)
 @htf.measures(htf.Measurement("num_macs").equals(5))
 def serial_from_server(
-        test: openhtf.TestApi,
+        test: htf.TestApi,
         prompts: user_input.UserInput,
         server: code_server.CodeServer):
     qr1 = prompts.prompt("Scan the first QR/datamatrix", text_input=True)
@@ -31,14 +32,14 @@ def serial_from_server(
 
 
 @plugs.plug(serial=serial_collection.SerialCollectionPlug)
-def start_serial_port(test: openhtf.TestApi, serial: serial_collection.SerialCollection):
+def start_serial_port(test: htf.TestApi, serial: serial_collection.SerialCollectionPlug):
     output = test.state['serial_output'] = tempfile.NamedTemporaryFile(delete=False)
     output.close()
     serial.start_collection(output.name)
 
 
 @plugs.plug(serial=serial_collection.SerialCollectionPlug)
-def stop_serial_port(test: openhtf.TestApi, serial: serial_collection.SerialCollection):
+def stop_serial_port(test: htf.TestApi, serial: serial_collection.SerialCollectionPlug):
     output = test.state['serial_output']
     test.attach_from_file(output.name)
     os.unlink(output.name)
@@ -46,8 +47,8 @@ def stop_serial_port(test: openhtf.TestApi, serial: serial_collection.SerialColl
 
 @plugs.plug(serial=serial_collection.SerialCollectionPlug)
 def wait_for_serial_text(
-        test: openhtf.TestApi,
-        serial: serial_collection.SerialCollection,
+        test: htf.TestApi,
+        serial: serial_collection.SerialCollectionPlug,
         text: str,
         response: str):
     output = test.state['serial_output']
@@ -57,7 +58,10 @@ def wait_for_serial_text(
     serial._serial.write(response)
 
 def main():
-    CONF.load(station_server_port="4444")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--code_server_endpoint', default="http://localhost:8080")
+    parser.add_argument('--station_server_port', default=4444)
+    CONF.load(**parser.parse_args().__dict__)
     with station_server.StationServer() as server:
         test = htf.Test(
             start_serial_port,
