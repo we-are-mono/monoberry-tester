@@ -39,6 +39,8 @@ class Workflow(QObject):
         serial_service (SerialService): Service to comminucate via UART
         scanner_service (ScannerService): Service to received scanned QR codes
         server_client (ServerClient): Service to communicate with our server
+        serial_controller (SerialController): Service to wait for text and send text to serial
+        process_runner (ProcessService): Service managing running processes and reading and sending data to/from them
     """
 
     state_changed = pyqtSignal(dict)
@@ -51,7 +53,8 @@ class Workflow(QObject):
         serial_service: SerialService,
         scanner_service: ScannerService,
         server_client: ServerClient,
-        serial_controller: SerialController
+        serial_controller: SerialController,
+        process_runner: ProcessService
     ):
         super().__init__()
 
@@ -67,6 +70,7 @@ class Workflow(QObject):
         self.scanner            = scanner_service
         self.server_client      = server_client
         self.serial_controller  = serial_controller
+        self.process_runner     = process_runner
 
         # Connect to external services signals
         self.scanner.code_received.connect(self.__handle_scanned_codes)

@@ -13,7 +13,7 @@ import urllib
 from queue import Queue
 
 from PyQt5.QtSerialPort import QSerialPort
-from PyQt5.QtCore import Qt, QObject, pyqtSignal
+from PyQt5.QtCore import Qt, QObject, QProcess, pyqtSignal
 
 import texts
 
@@ -211,3 +211,56 @@ class SerialController(QObject):
                 if send_text:
                     self.serial_service.send(send_text)
                 callback()
+
+class ProcessService(QObject):
+    output_received = pyqtSignal(str)
+    error_received = pyqtSignal(str)
+    process_finished = pyqtSignal(int)
+    process_error = pyqtSignal(str)
+
+    def __init__(self, logging_service: LoggingService):
+        super().__init__()
+        self.logger = logging_service
+        self.process = QProcess()
+        self.process.readyReadStandardOutput.connect(self.__handle_stdout)
+        self.process.readyReadStandardError.connect(self.__handle_stderr)
+        self.process.finished.connect(self.__handle_finished)
+        self.process.errorOccurred.connect(self.__handle_error)
+
+    def start(self, program, args=None):
+        if args is None:
+            args = []
+        self.process.start(program, args)
+
+    def write_to_process(self, data):
+        data = data.encode("utf-8")
+        self.process.write(data)
+        self.process.write(b"\n")
+
+    def __handle_stdout(self):
+        data = bytes(self.process.readAllStandardOutput())
+        self.logger.info(f"ProcessService: {self.process.program()} {' '.join(self.process.arguments())} received:\n{data}")
+        self.output_received.emit(data.decode("utf-8"))
+
+    def __handle_stderr(self):
+        data = bytes(self.process.readAllStandardError())
+        self.logger.error(f"ProcessService: {self.process.program()} {' '.join(self.process.arguments())} error:\n{data}")
+        self.error_received.emit(data.decode("utf-8"))
+
+    def __handle_finished(self, exit_code, exit_status):
+        self.logger.info(f"ProcessService: {self.process.program()} {' '.join(self.process.arguments())} exited with {exit_code} {exit_status}")
+        self.process_finished.emit(exit_code)
+
+    def __handle_error(self, error):
+        error_messages = {
+            QProcess.FailedToStart: "Process failed to start (file not found or no permissions)",
+            QProcess.Crashed: "Process crashed",
+            QProcess.Timedout: "Process timed out",
+            QProcess.WriteError: "Write error",
+            QProcess.ReadError: "Read error",
+            QProcess.UnknownError: "Unknown error"
+        }
+
+        err_str = error_messages.get(error, "Unknown error")
+        self.logger.info(f"ProcessService: {self.process.program()} {' '.join(self.process.arguments())} error occured: {err_str}")
+        self.process_error.emit(err_str)
