@@ -61,6 +61,7 @@ class Main(QMainWindow):
         self.ui.start_btn.clicked.connect(self.workflow.start)
         self.ui.reset_btn.clicked.connect(self.workflow.reset)
         self.workflow.code_scanned.connect(self.__update_scanned_codes)
+        self.workflow.serial_scanned.connect(self.__update_serial)
         self.workflow.state_changed.connect(self.__update_ui)
         self.workflow.test_state_changed.connect(self.__update_test_ui)
 
@@ -68,6 +69,7 @@ class Main(QMainWindow):
             State.IDLE:                     self.__update_ui_idle,
             State.STARTED:                  self.__update_ui_started,
             State.CONNECTING_TO_UART:       self.__update_ui_connecting_to_uart,
+            State.SCANNING_SERIAL_NUM:      self.__update_ui_scanning_serial_num,
             State.SCANNING_QR_CODES:        self.__update_ui_scanning_qr_codes,
             State.FETCHING_SERIAL_AND_MACS: self.__update_ui_fetching_serial_and_macs,
             State.CONNECTING_CABLES:        self.__update_ui_connecting_cables,
@@ -92,6 +94,10 @@ class Main(QMainWindow):
             self.ui.set_dm_qr_top(codes[0])
         elif len(codes) == 2:
             self.ui.set_dm_qr_bottom(codes[1])
+
+    def __update_serial(self, serial):
+        """Updates UI for serial number"""
+        self.ui.set_dm_qr_serial(serial)
 
     def __update_test_ui(self, name, state):
         """Updates state for a given test"""
@@ -122,6 +128,10 @@ class Main(QMainWindow):
     def __update_ui_connecting_to_uart(self):
         """Updates UI to reflect connecting to UART state"""
         self.ui.update_status(texts.STATUS_CONN_TO_UART)
+
+    def __update_ui_scanning_serial_num(self):
+        """Updates UI to reflect scanning serial number state"""
+        self.ui.update_status(texts.STATUS_SCAN_SERIAL_NUM)
 
     def __update_ui_scanning_qr_codes(self):
         """Updates UI to reflect scanning QR codes state"""

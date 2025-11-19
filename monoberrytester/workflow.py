@@ -18,6 +18,7 @@ class State(Enum):
     IDLE                        = auto()
     STARTED                     = auto()
     CONNECTING_TO_UART          = auto()
+    SCANNING_SERIAL_NUM         = auto()
     SCANNING_QR_CODES           = auto()
     FETCHING_SERIAL_AND_MACS    = auto()
     CONNECTING_CABLES           = auto()
@@ -44,6 +45,7 @@ class Workflow(QObject):
     """
 
     state_changed = pyqtSignal(dict)
+    serial_scanned = pyqtSignal(str)
     code_scanned = pyqtSignal(list)
     test_state_changed = pyqtSignal(TestKeys, TestState)
 
@@ -116,11 +118,19 @@ class Workflow(QObject):
         self.test_state_changed.emit(TestKeys.CONN_TO_UART, TestState.RUNNING)
         self.serial_thread.start()
 
+    def scan_serial_num(self):
+        """Prompts the user to scan the serial number
+
+        Continues in __handle_scanned_codes method"""
+        self.test_state_changed.emit(TestKeys.CONN_TO_UART, TestState.SUCCEEDED)
+        self.__change_state(State.SCANNING_SERIAL_NUM)
+        self.test_state_changed.emit(TestKeys.SCAN_SERIAL_NUM, TestState.RUNNING)
+
     def scan_qr_codes(self):
         """Prompts user to scan two data matrix codes
 
         Continues in __handle_scanned_codes method"""
-        self.test_state_changed.emit(TestKeys.CONN_TO_UART, TestState.SUCCEEDED)
+        self.test_state_changed.emit(TestKeys.SCAN_SERIAL_NUM, TestState.SUCCEEDED)
         self.__change_state(State.SCANNING_QR_CODES)
         self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.RUNNING)
 
@@ -159,7 +169,7 @@ class Workflow(QObject):
     def key_pressed(self, event):
         """Handler for all key presses.
         But it only forwards to scanner service if scanning QR codes state"""
-        if self.state == State.SCANNING_QR_CODES:
+        if self.state in (State.SCANNING_QR_CODES, State.SCANNING_SERIAL_NUM):
             self.scanner.handle_input(event.key(), event.text())
 
     def __change_state(self, state, msgs=None):
@@ -171,17 +181,23 @@ class Workflow(QObject):
 
     def __handle_scanned_codes(self, code):
         """Called upon successfully receiving a code from the scanner"""
-        self.scanned_codes.append(code)
-        self.code_scanned.emit(self.scanned_codes)
+        print(1)
+        if self.state == State.SCANNING_SERIAL_NUM:
+            self.serial_num = code
+            self.serial_scanned.emit(self.serial_num)
+            self.scan_qr_codes()
+        elif self.state == State.SCANNING_QR_CODES:
+            self.scanned_codes.append(code)
+            self.code_scanned.emit(self.scanned_codes)
 
-        if len(self.scanned_codes) == 1:
-            self.logger.info(f"{texts.LOG_INFO_FIRST_CODE_SCANNED} {code}")
-        elif len(self.scanned_codes) == 2:
-            self.logger.info(f"{texts.LOG_INFO_SECOND_CODE_SCANNED} {code}")
-            self.fetch_serial_and_macs()
-        else:
-            self.logger.error(texts.LOG_ERROR_MORE_THAN_2_QR_SCANNED)
-            self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.FAILED)
+            if len(self.scanned_codes) == 1:
+                self.logger.info(f"{texts.LOG_INFO_FIRST_CODE_SCANNED} {code}")
+            elif len(self.scanned_codes) == 2:
+                self.logger.info(f"{texts.LOG_INFO_SECOND_CODE_SCANNED} {code}")
+                self.fetch_serial_and_macs()
+            else:
+                self.logger.error(texts.LOG_ERROR_MORE_THAN_2_QR_SCANNED)
+                self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.FAILED)
 
     def __handle_server_response(self, success: bool, response: str):
         """Called upon receiving a response from the server"""
@@ -211,7 +227,7 @@ class Workflow(QObject):
     def __handle_serial_connected(self):
         """Called on successful serial connection"""
         self.logger.info(texts.LOG_INFO_UART_CONNECTED)
-        self.scan_qr_codes()
+        self.scan_serial_num()
 
     def __handle_serial_error_occured(self, err_msg):
         """Called on failed serial connection"""

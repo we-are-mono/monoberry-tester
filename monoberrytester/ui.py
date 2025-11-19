@@ -85,12 +85,17 @@ class UI(QWidget):
 
         self.dm_qr_group = QGroupBox()
         self.dm_qr_group_layout = QVBoxLayout()
+        self.dm_qr_label_serial = QLabel(texts.UI_LABEL_SERIAL)
+        self.dm_qr_line_edit_serial = QLineEdit()
+        self.dm_qr_line_edit_serial.setDisabled(True)
         self.dm_qr_label_top = QLabel(texts.UI_LABEL_TOP_QR)
         self.dm_qr_line_edit_top = QLineEdit()
         self.dm_qr_line_edit_top.setDisabled(True)
         self.dm_qr_label_bottom = QLabel(texts.UI_LABEL_BOTTOM_QR)
         self.dm_qr_line_edit_bottom = QLineEdit()
         self.dm_qr_line_edit_bottom.setDisabled(True)
+        self.dm_qr_group_layout.addWidget(self.dm_qr_label_serial)
+        self.dm_qr_group_layout.addWidget(self.dm_qr_line_edit_serial)
         self.dm_qr_group_layout.addWidget(self.dm_qr_label_top)
         self.dm_qr_group_layout.addWidget(self.dm_qr_line_edit_top)
         self.dm_qr_group_layout.addWidget(self.dm_qr_label_bottom)
@@ -155,6 +160,10 @@ class UI(QWidget):
             self.label.setStyleSheet(styles.STATUS_ERROR)
         else:
             self.label.setStyleSheet(styles.STATUS_NORMAL)
+
+    def set_dm_qr_serial(self, serial: str):
+        """Updates serial number text field"""
+        self.dm_qr_line_edit_serial.setText(serial)
 
     def set_dm_qr_top(self, code: str):
         """Updates top scanned QR text field"""

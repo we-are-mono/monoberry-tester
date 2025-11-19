@@ -13,4 +13,4 @@ This package provides the initial tool to test Mono router dev kit boards
 - Run: `make run server_url=http://actualserver.com uart_dev=/dev/ttyActualDevice`
 
 ## Docs
-For more read the `docs.md` (generated documentation from code comments).
+All the fils should have inline documentation.
