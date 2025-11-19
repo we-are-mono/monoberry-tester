@@ -2,9 +2,10 @@
 Test definitions for display and update on UI
 """
 
-from enum import Enum, auto
+from enum import Enum
 
 class TestKeys(Enum):
+    """Holds application states"""
     T0_CONN_TO_UART =           "0_conn_to_uart"
     T1_SCAN_TWO_DM_QR_CODES =   "1_scan_two_dm_qr_codes"
     T2_FETCH_SERIAL_AND_MACS =  "2_fetch_serial_and_macs"

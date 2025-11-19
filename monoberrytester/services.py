@@ -5,19 +5,17 @@ like serial, http, logs, barcode scanner, ...
 TODO: replace with actual code when I get the barcode scanner
 """
 
+from queue import Queue
 from datetime import datetime
 
+import urllib
 import logging
 import requests
-import urllib
-from queue import Queue
 
 from PyQt5.QtSerialPort import QSerialPort
 from PyQt5.QtCore import Qt, QObject, QProcess, pyqtSignal
 
 import texts
-
-THREAD_WAIT_TIMEOUT_MS = 1000
 
 class LoggingService(QObject):
     """Class for logging into a file and on screen to QTextEdit widget"""
@@ -29,6 +27,7 @@ class LoggingService(QObject):
         self.__init_logging()
 
     def reinit(self):
+        """Re-init the logging (for resets)"""
         self.__init_logging()
 
     def info(self, text, should_display=True):
@@ -48,8 +47,8 @@ class LoggingService(QObject):
         logger = logging.getLogger()
 
         for handler in logger.handlers[:]:
-                handler.close()
-                logger.removeHandler(handler)
+            handler.close()
+            logger.removeHandler(handler)
 
         handler = logging.FileHandler(filename)
         formatter = logging.Formatter('%(asctime)s - %(message)s')
@@ -112,14 +111,20 @@ class ServerClient(QObject):
         self.qr1 = codes[0]
         self.qr2 = codes[1]
 
+    # TO-DO: Needs changing to /register to register device with serial to get macs
     def send_qrs(self):
+        """CHANGE IT!"""
         self.__config_request("GET", "/serial-macs", {"qr1": self.qr1, "qr2": self.qr2})
 
     def run(self):
         """Runs the thread and fetches serial and MACs from our server"""
         url = urllib.parse.urljoin(self.server_endpoint, self.path)
         try:
-            r = requests.request(method=self.method.upper(), url=url, params=self.request_params, timeout=10)
+            r = requests.request(
+                method=self.method.upper(),
+                url=url, params=self.request_params,
+                timeout=10
+            )
 
             if r.status_code != 200:
                 self.response_received.emit(False, r.text)
@@ -138,7 +143,7 @@ class SerialService(QObject):
     """Serial service to comminucate with the board via UART"""
 
     connected = pyqtSignal()
-    error_occurred = pyqtSignal()
+    error_occurred = pyqtSignal(str)
     line_received = pyqtSignal(str)
 
     def __init__(self, port_name, baud_rate = 115200):
@@ -146,17 +151,22 @@ class SerialService(QObject):
         self.port_name = port_name
         self.baud_rate = baud_rate
         self.write_queue = Queue()
+        self.is_running = False
+        self.serial_port = None
 
     def stop(self):
+        """Stop serial service"""
         self.is_running = False
 
     def send(self, data: str):
+        """Send data via serial (writes to queue then the run loop sends it from queue)"""
         if self.serial_port.isOpen():
             self.write_queue.put(data)
         else:
             self.error_occurred.emit(texts.LOG_ERROR_UART_WRITE_NOT_OPEN)
 
     def run(self):
+        """Runs a loop for reading and writing to serial"""
         self.serial_port = QSerialPort()
         self.serial_port.setPortName(self.port_name)
         self.serial_port.setBaudRate(self.baud_rate)
@@ -193,19 +203,22 @@ class SerialController(QObject):
         self.waiting_list = []
 
     def wait_for(self, wait_text, callback) -> bool:
+        """Adds a text to wait for in the waiting_list"""
         self.waiting_list.append((wait_text, callback))
 
     def wait_for_and_send(self, wait_text, send_text, callback) -> bool:
+        """Adds a text to wait for and text to send after in the waiting_list"""
         self.waiting_list.append((wait_text, callback, send_text))
 
     def __on_line_received(self, line):
+        """Handler for when data is received via serial"""
         for wait_item in self.waiting_list:
             wait_text, callback, send_text = None, None, None
             if len(wait_item) == 2:
                 wait_text, callback = wait_item
             else:
                 wait_text, callback, send_text = wait_item
-            
+
             if wait_text in line:
                 self.waiting_list.remove(wait_item)
                 if send_text:
@@ -213,6 +226,7 @@ class SerialController(QObject):
                 callback()
 
 class ProcessService(QObject):
+    """Service for running, reading from and writing to processes"""
     output_received = pyqtSignal(str)
     error_received = pyqtSignal(str)
     process_finished = pyqtSignal(int)
@@ -228,30 +242,36 @@ class ProcessService(QObject):
         self.process.errorOccurred.connect(self.__handle_error)
 
     def start(self, program, args=None):
+        """Starts the process"""
         if args is None:
             args = []
         self.process.start(program, args)
 
     def write_to_process(self, data):
+        """Writes to the process"""
         data = data.encode("utf-8")
         self.process.write(data)
         self.process.write(b"\n")
 
     def __handle_stdout(self):
+        """Handler for receiving data via stdout"""
         data = bytes(self.process.readAllStandardOutput())
         self.logger.info(f"ProcessService: {self.process.program()} {' '.join(self.process.arguments())} received:\n{data}")
         self.output_received.emit(data.decode("utf-8"))
 
     def __handle_stderr(self):
+        """Handler for receiving data via stderr"""
         data = bytes(self.process.readAllStandardError())
         self.logger.error(f"ProcessService: {self.process.program()} {' '.join(self.process.arguments())} error:\n{data}")
         self.error_received.emit(data.decode("utf-8"))
 
     def __handle_finished(self, exit_code, exit_status):
+        """Handler for when process finishes"""
         self.logger.info(f"ProcessService: {self.process.program()} {' '.join(self.process.arguments())} exited with {exit_code} {exit_status}")
         self.process_finished.emit(exit_code)
 
     def __handle_error(self, error):
+        """Handler for when process errors"""
         error_messages = {
             QProcess.FailedToStart: "Process failed to start (file not found or no permissions)",
             QProcess.Crashed: "Process crashed",
