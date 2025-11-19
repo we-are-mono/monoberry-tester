@@ -107,7 +107,7 @@ class UI(QWidget):
 
         self.start_btn = QPushButton(texts.UI_START_BTN_LABEL_START)
         self.start_btn.setMinimumHeight(64)
-        self.start_btn.setStyleSheet(styles.START_BTN_IDLE)
+        self.start_btn.setStyleSheet(styles.START_BTN)
         self.reset_btn.setEnabled(False)
         self.reset_btn.setMinimumHeight(64)
         self.reset_btn.setStyleSheet(styles.RESET_BTN)
