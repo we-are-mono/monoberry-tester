@@ -285,3 +285,36 @@ class ProcessService(QObject):
         err_str = error_messages.get(error, "Unknown error")
         self.logger.info(f"ProcessService: {self.process.program()} {' '.join(self.process.arguments())} error occured: {err_str}")
         self.process_errored.emit(err_str)
+
+class ProcessController(QObject):
+    """Process controller to make working with processes easier"""
+
+    def __init__(self, process_service: ProcessService):
+        super().__init__()
+        self.process_service = process_service
+        self.process_service.output_received.connect(self.__on_output_received)
+        self.waiting_list = []
+
+    def wait_for(self, wait_text, callback):
+        """Adds a text to wait for in the waiting_list"""
+        self.waiting_list.append((wait_text, callback))
+
+    def wait_for_and_send(self, wait_text, send_text, callback):
+        """Adds a text to wait for and text to send after in the waiting_list"""
+        self.waiting_list.append((wait_text, callback, send_text))
+
+    def __on_output_received(self, output):
+        """Handler for when output is received from process"""
+        for wait_item in self.waiting_list:
+            wait_text, callback, send_text = None, None, None
+            if len(wait_item) == 2:
+                wait_text, callback = wait_item
+            else:
+                wait_text, callback, send_text = wait_item
+
+            if wait_text in output:
+                print(1)
+                self.waiting_list.remove(wait_item)
+                if send_text:
+                    self.process_service.write_to_process(send_text)
+                callback()

@@ -57,7 +57,8 @@ class Workflow(QObject):
         scanner_service: ScannerService,
         server_client: ServerClient,
         serial_controller: SerialController,
-        process_runner: ProcessService
+        process_runner: ProcessService,
+        process_controller: ProcessController
     ):
         super().__init__()
 
@@ -74,6 +75,7 @@ class Workflow(QObject):
         self.server_client      = server_client
         self.serial_controller  = serial_controller
         self.process_runner     = process_runner
+        self.process_controller = process_controller
 
         # Connect to external services signals
         self.scanner.code_received.connect(self.__handle_scanned_codes)
@@ -160,7 +162,8 @@ class Workflow(QObject):
         self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.SUCCEEDED)
         self.__change_state(State.LOADING_UBOOT_VIA_JTAG)
         self.test_state_changed.emit(TestKeys.LOAD_UBOOT_VIA_JTAG, TestState.RUNNING)
-        self.process_runner.start("ls", ["-al"])
+        self.process_controller.wait_for("inspect mode", self.connect_cables)
+        self.process_runner.start("irb", [])
 
     def connect_cables(self):
         """Prompts user to connect the rest of the cables"""

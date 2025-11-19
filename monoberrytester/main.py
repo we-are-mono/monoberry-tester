@@ -48,13 +48,15 @@ class Main(QMainWindow):
         self.scanner            = ScannerService()
         self.server_client      = ServerClient(server_endpoint, api_key, self.logger)
         self.process_runner     = ProcessService(self.logger)
+        self.process_controller = ProcessController(self.process_runner)
         self.workflow           = Workflow(
                                     self.logger,
                                     self.serial,
                                     self.scanner,
                                     self.server_client,
                                     self.serial_controller,
-                                    self.process_runner
+                                    self.process_runner,
+                                    self.process_controller
                                 )
 
         self.logger.logline_received.connect(self.__update_logs_ui)
