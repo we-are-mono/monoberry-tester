@@ -98,26 +98,28 @@ class ServerClient(QObject):
         super().__init__()
         self.logger = logging_service
         self.server_endpoint = server_endpoint
+        self.serial = None
         self.qr1 = None
         self.qr2 = None
         self.method = None
         self.path = None
         self.request_params = {}
 
-    def set_codes(self, codes):
+    def set_params(self, serial, codes):
         """
         Sets scanned QR data matrix codes (do this before calling `run` method)
         """
+        self.serial = serial
         self.qr1 = codes[0]
         self.qr2 = codes[1]
 
     # TO-DO: Needs changing to /register to register device with serial to get macs
     def send_qrs(self):
         """CHANGE IT!"""
-        self.__config_request("GET", "/serial-macs", {"qr1": self.qr1, "qr2": self.qr2})
+        self.__config_request("POST", f"/devices/{self.serial}/register", {"qr1": self.qr1, "qr2": self.qr2})
 
     def run(self):
-        """Runs the thread and fetches serial and MACs from our server"""
+        """Runs the thread to registers device and MACs from our server"""
         url = urllib.parse.urljoin(self.server_endpoint, self.path)
         try:
             r = requests.request(

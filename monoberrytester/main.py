@@ -71,7 +71,7 @@ class Main(QMainWindow):
             State.CONNECTING_TO_UART:       self.__update_ui_connecting_to_uart,
             State.SCANNING_SERIAL_NUM:      self.__update_ui_scanning_serial_num,
             State.SCANNING_QR_CODES:        self.__update_ui_scanning_qr_codes,
-            State.FETCHING_SERIAL_AND_MACS: self.__update_ui_fetching_serial_and_macs,
+            State.REGISTERING_DEVICE:       self.__update_ui_register_device,
             State.CONNECTING_CABLES:        self.__update_ui_connecting_cables,
             State.WAITING_FOR_UBOOT:        self.__update_ui_waiting_for_uboot,
             State.DONE:                     self.__update_ui_done,
@@ -137,9 +137,9 @@ class Main(QMainWindow):
         """Updates UI to reflect scanning QR codes state"""
         self.ui.update_status(texts.STATUS_SCAN_QR_TOP)
 
-    def __update_ui_fetching_serial_and_macs(self):
-        """Updates UI to reflect fetching serial and macs state"""
-        self.ui.update_status(texts.STATUS_GET_SER_MACS)
+    def __update_ui_register_device(self):
+        """Updates UI to reflect registering the device"""
+        self.ui.update_status(texts.STATUS_REGISTER_DEVICE)
 
     def __update_ui_connecting_cables(self):
         """Updates UI to reflect connecting cables state"""

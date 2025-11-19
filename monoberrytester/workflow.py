@@ -20,7 +20,7 @@ class State(Enum):
     CONNECTING_TO_UART          = auto()
     SCANNING_SERIAL_NUM         = auto()
     SCANNING_QR_CODES           = auto()
-    FETCHING_SERIAL_AND_MACS    = auto()
+    REGISTERING_DEVICE          = auto()
     CONNECTING_CABLES           = auto()
     WAITING_FOR_UBOOT           = auto()
     DONE                        = auto()
@@ -134,21 +134,22 @@ class Workflow(QObject):
         self.__change_state(State.SCANNING_QR_CODES)
         self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.RUNNING)
 
-    def fetch_serial_and_macs(self):
-        """Connect to our server to fetch serial and MAC addresses
-        based on the provided data matrix QR codes
+    def register_device_and_get_macs(self):
+        """Connect to our server to register device and get MAC addresses
+        based on the serial and provided data matrix QR codes
+
         Continues in __handle_server_response method"""
         self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.SUCCEEDED)
-        self.__change_state(State.FETCHING_SERIAL_AND_MACS)
-        self.test_state_changed.emit(TestKeys.FETCH_SERIAL_AND_MACS, TestState.RUNNING)
-        self.server_client.set_codes(self.scanned_codes)
+        self.__change_state(State.REGISTERING_DEVICE)
+        self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.RUNNING)
+        self.server_client.set_params(self.serial, self.scanned_codes)
         self.server_client.send_qrs()
         if not self.server_thread.isRunning():
             self.server_thread.start()
 
     def connect_cables(self):
         """Prompts user to connect the rest of the cables"""
-        self.test_state_changed.emit(TestKeys.FETCH_SERIAL_AND_MACS, TestState.SUCCEEDED)
+        self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.SUCCEEDED)
         self.__change_state(State.CONNECTING_CABLES)
         self.test_state_changed.emit(TestKeys.RECEIVE_DATA_VIA_UART, TestState.RUNNING)
         self.serial_controller.wait_for("", self.__handle_serial_line_received)
@@ -181,7 +182,6 @@ class Workflow(QObject):
 
     def __handle_scanned_codes(self, code):
         """Called upon successfully receiving a code from the scanner"""
-        print(1)
         if self.state == State.SCANNING_SERIAL_NUM:
             self.serial_num = code
             self.serial_scanned.emit(self.serial_num)
@@ -194,7 +194,7 @@ class Workflow(QObject):
                 self.logger.info(f"{texts.LOG_INFO_FIRST_CODE_SCANNED} {code}")
             elif len(self.scanned_codes) == 2:
                 self.logger.info(f"{texts.LOG_INFO_SECOND_CODE_SCANNED} {code}")
-                self.fetch_serial_and_macs()
+                self.register_device_and_get_macs()
             else:
                 self.logger.error(texts.LOG_ERROR_MORE_THAN_2_QR_SCANNED)
                 self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.FAILED)
@@ -212,13 +212,13 @@ class Workflow(QObject):
             self.connect_cables()
         else:
             self.logger.error(f"{texts.LOG_INFO_SERVER_ERROR} {response}")
-            self.test_state_changed.emit(TestKeys.FETCH_SERIAL_AND_MACS, TestState.FAILED)
+            self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.FAILED)
 
     def __handle_server_error(self, err_msg):
         self.server_thread.quit()
         self.server_thread.wait()
 
-        self.test_state_changed.emit(TestKeys.FETCH_SERIAL_AND_MACS, TestState.FAILED)
+        self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.FAILED)
         self.__change_state(State.FAILED, {
             "status": texts.CONN_TO_SERVER_FAILED,
             "err_msg": err_msg
