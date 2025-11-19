@@ -94,6 +94,7 @@ class Main(QMainWindow):
             self.ui.set_dm_qr_bottom(codes[1])
 
     def __update_test_ui(self, name, state):
+        """Updates state for a given test"""
         self.ui.set_test_state(name, state)
 
     def __update_ui(self, msgs):
