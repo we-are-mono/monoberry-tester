@@ -33,7 +33,7 @@ class Main(QMainWindow):
         server_endpoint (str): Base url for our server endpoint
         serial_port (str): Path to device (TTY) on disk to connect to
     """
-    def __init__(self, server_endpoint, serial_port):
+    def __init__(self, server_endpoint, api_key, serial_port):
         super().__init__()
 
         # Init UI
@@ -46,7 +46,7 @@ class Main(QMainWindow):
         self.serial             = SerialService(serial_port)
         self.serial_controller  = SerialController(self.serial)
         self.scanner            = ScannerService()
-        self.server_client      = ServerClient(server_endpoint, self.logger)
+        self.server_client      = ServerClient(server_endpoint, api_key, self.logger)
         self.process_runner     = ProcessService(self.logger)
         self.workflow           = Workflow(
                                     self.logger,
@@ -72,6 +72,7 @@ class Main(QMainWindow):
             State.SCANNING_SERIAL_NUM:      self.__update_ui_scanning_serial_num,
             State.SCANNING_QR_CODES:        self.__update_ui_scanning_qr_codes,
             State.REGISTERING_DEVICE:       self.__update_ui_register_device,
+            State.LOADING_UBOOT_VIA_JTAG:   self.__update_ui_loading_uboot_via_jtag,
             State.CONNECTING_CABLES:        self.__update_ui_connecting_cables,
             State.WAITING_FOR_UBOOT:        self.__update_ui_waiting_for_uboot,
             State.DONE:                     self.__update_ui_done,
@@ -141,6 +142,9 @@ class Main(QMainWindow):
         """Updates UI to reflect registering the device"""
         self.ui.update_status(texts.STATUS_REGISTER_DEVICE)
 
+    def __update_ui_loading_uboot_via_jtag(self):
+        """Updates UI to reflect loading u-boot via JTAG"""
+        self.ui.update_status(texts.STATUS_LOADING_UBOOT_VIA_JTAG)
     def __update_ui_connecting_cables(self):
         """Updates UI to reflect connecting cables state"""
         self.ui.update_status(texts.STATUS_CONNECT_CABLES)
@@ -165,9 +169,10 @@ def main():
     app = QApplication(sys.argv)
 
     server_endpoint = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000"
-    serial_port = sys.argv[2] if len(sys.argv) > 2 else "/tmp/ttyMBT01"
+    api_key = sys.argv[2] if len(sys.argv) > 2 else "FAKE-API-KEY"
+    serial_port = sys.argv[3] if len(sys.argv) > 3 else "/tmp/ttyMBT01"
 
-    window = Main(server_endpoint, serial_port)
+    window = Main(server_endpoint, api_key, serial_port)
     window.show()
     # window.showFullScreen()
     sys.exit(app.exec())

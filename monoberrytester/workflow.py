@@ -21,6 +21,7 @@ class State(Enum):
     SCANNING_SERIAL_NUM         = auto()
     SCANNING_QR_CODES           = auto()
     REGISTERING_DEVICE          = auto()
+    LOADING_UBOOT_VIA_JTAG      = auto()
     CONNECTING_CABLES           = auto()
     WAITING_FOR_UBOOT           = auto()
     DONE                        = auto()
@@ -113,7 +114,9 @@ class Workflow(QObject):
         self.connect_to_uart()
 
     def connect_to_uart(self):
-        """Tests UART connection to the board"""
+        """Tests UART connection to the board
+        
+        Continues in __handle_serial_connected"""
         self.__change_state(State.CONNECTING_TO_UART)
         self.test_state_changed.emit(TestKeys.CONN_TO_UART, TestState.RUNNING)
         self.serial_thread.start()
@@ -142,10 +145,16 @@ class Workflow(QObject):
         self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.SUCCEEDED)
         self.__change_state(State.REGISTERING_DEVICE)
         self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.RUNNING)
-        self.server_client.set_params(self.serial, self.scanned_codes)
+        self.server_client.set_params(self.serial_num, self.scanned_codes)
         self.server_client.send_qrs()
         if not self.server_thread.isRunning():
             self.server_thread.start()
+
+    def load_uboot_via_jtag(self):
+        """Init board and load U-Boot in memory via external program"""
+        self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.SUCCEEDED)
+        self.__change_state(State.LOADING_UBOOT_VIA_JTAG)
+        self.test_state_changed.emit(TestKeys.LOAD_UBOOT_VIA_JTAG, TestState.RUNNING)
 
     def connect_cables(self):
         """Prompts user to connect the rest of the cables"""

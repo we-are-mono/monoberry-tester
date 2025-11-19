@@ -94,10 +94,11 @@ class ServerClient(QObject):
     response_received = pyqtSignal(bool, str)
     error_occured = pyqtSignal(str)
 
-    def __init__(self, server_endpoint, logging_service: LoggingService):
+    def __init__(self, server_endpoint, api_key, logging_service: LoggingService):
         super().__init__()
         self.logger = logging_service
         self.server_endpoint = server_endpoint
+        self.api_key = api_key
         self.serial = None
         self.qr1 = None
         self.qr2 = None
@@ -113,10 +114,8 @@ class ServerClient(QObject):
         self.qr1 = codes[0]
         self.qr2 = codes[1]
 
-    # TO-DO: Needs changing to /register to register device with serial to get macs
     def send_qrs(self):
-        """CHANGE IT!"""
-        self.__config_request("POST", f"/devices/{self.serial}/register", {"qr1": self.qr1, "qr2": self.qr2})
+        self.__config_request("POST", f"/api/devices/{self.serial}/register?api_key={self.api_key}", {"qr1": self.qr1, "qr2": self.qr2})
 
     def run(self):
         """Runs the thread to registers device and MACs from our server"""
