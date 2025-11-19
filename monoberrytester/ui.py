@@ -175,6 +175,7 @@ class UI(QWidget):
 
     def clear_qr_codes(self):
         """Clears both QR codes text fields"""
+        self.dm_qr_line_edit_serial.setText("")
         self.dm_qr_line_edit_top.setText("")
         self.dm_qr_line_edit_bottom.setText("")
 

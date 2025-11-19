@@ -231,7 +231,7 @@ class ProcessService(QObject):
     output_received = pyqtSignal(str)
     error_received = pyqtSignal(str)
     process_finished = pyqtSignal(int)
-    process_error = pyqtSignal(str)
+    process_errored = pyqtSignal(str)
 
     def __init__(self, logging_service: LoggingService):
         super().__init__()
@@ -284,4 +284,4 @@ class ProcessService(QObject):
 
         err_str = error_messages.get(error, "Unknown error")
         self.logger.info(f"ProcessService: {self.process.program()} {' '.join(self.process.arguments())} error occured: {err_str}")
-        self.process_error.emit(err_str)
+        self.process_errored.emit(err_str)

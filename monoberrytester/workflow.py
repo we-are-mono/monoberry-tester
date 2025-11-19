@@ -91,6 +91,11 @@ class Workflow(QObject):
         self.serial.moveToThread(self.serial_thread)
         self.serial_thread.started.connect(self.serial.run)
 
+        self.process_runner.output_received.connect(self.__handle_process_output_received)
+        self.process_runner.error_received.connect(self.__handle_process_error_received)
+        self.process_runner.process_errored.connect(self.__handle_process_errored)
+        self.process_runner.process_finished.connect(self.__handle_process_finished)
+
     def reset(self):
         """Resets back to idle state in order to do retry upon failure"""
         self.logger.info("--- Reseting ---")
@@ -155,10 +160,11 @@ class Workflow(QObject):
         self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.SUCCEEDED)
         self.__change_state(State.LOADING_UBOOT_VIA_JTAG)
         self.test_state_changed.emit(TestKeys.LOAD_UBOOT_VIA_JTAG, TestState.RUNNING)
+        self.process_runner.start("ls", ["-al"])
 
     def connect_cables(self):
         """Prompts user to connect the rest of the cables"""
-        self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.SUCCEEDED)
+        self.test_state_changed.emit(TestKeys.LOAD_UBOOT_VIA_JTAG, TestState.SUCCEEDED)
         self.__change_state(State.CONNECTING_CABLES)
         self.test_state_changed.emit(TestKeys.RECEIVE_DATA_VIA_UART, TestState.RUNNING)
         self.serial_controller.wait_for("", self.__handle_serial_line_received)
@@ -218,7 +224,7 @@ class Workflow(QObject):
             r = response.split()
             self.serial_num = r[0]
             self.mac_addresses = r[1:]
-            self.connect_cables()
+            self.load_uboot_via_jtag()
         else:
             self.logger.error(f"{texts.LOG_INFO_SERVER_ERROR} {response}")
             self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.FAILED)
@@ -254,5 +260,29 @@ class Workflow(QObject):
             self.__change_state(State.WAITING_FOR_UBOOT)
             self.wait_for_uboot()
 
+    def __handle_process_output_received(self, text):
+        """Called when program outputs someting to stdout"""
+        self.logger.info(text)
+
+    def __handle_process_error_received(self, err_msg):
+        """Called when program outputs something to stderr"""
+        self.logger.error(err_msg)
+
+    def __handle_process_errored(self, err_msg):
+        """Called when process errors out"""
+        self.logger.error(f"{texts.LOG_PROCESS_ERRORED} {err_msg}")
+        self.__change_state(State.FAILED, {
+            "status": texts.STATUS_PROCESS_ERRORED,
+            "err_msg": err_msg
+        })
+
+    def __handle_process_finished(self, return_code):
+        """Called when process returns/exits"""
+        self.logger.info(f"{texts.LOG_PROCESS_EXITED} {return_code}")
+        if return_code == 0:
+            self.connect_cables()
+        else:
+            self.logger.error(texts.LOG_PROCESS_EXITED_NON_0_CODE)
+
     def __log_serial(self, data: str):
-        self.logger.info("S> " + data, False)
+        self.logger.info(data, False)
