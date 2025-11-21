@@ -237,6 +237,7 @@ class ProcessService(QObject):
         super().__init__()
         self.logger = logging_service
         self.process = QProcess()
+        self.is_stopping = False
         self.process.readyReadStandardOutput.connect(self.__handle_stdout)
         self.process.readyReadStandardError.connect(self.__handle_stderr)
         self.process.finished.connect(self.__handle_finished)
@@ -246,7 +247,13 @@ class ProcessService(QObject):
         """Starts the process"""
         if args is None:
             args = []
+        self.is_stopping = False
         self.process.start(program, args)
+
+    def stop(self):
+        """Stops the process gracefully"""
+        self.is_stopping = True
+        self.process.terminate()
 
     def write_to_process(self, data):
         """Writes to the process"""
@@ -273,6 +280,11 @@ class ProcessService(QObject):
 
     def __handle_error(self, error):
         """Handler for when process errors"""
+        # Don't emit error if we're intentionally stopping the process
+        if self.is_stopping and error == QProcess.Crashed:
+            self.logger.info(f"ProcessService: {self.process.program()} {' '.join(self.process.arguments())} stopped by user")
+            return
+
         error_messages = {
             QProcess.FailedToStart: "Process failed to start (file not found or no permissions)",
             QProcess.Crashed: "Process crashed",

@@ -99,6 +99,7 @@ class Workflow(QObject):
         self.serial.stop()
         self.serial_thread.quit()
         self.serial_thread.wait()
+        self.process_runner.stop()
 
         self.__change_state(State.IDLE)
 
