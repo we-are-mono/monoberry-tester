@@ -252,8 +252,15 @@ class ProcessService(QObject):
 
     def stop(self):
         """Stops the process gracefully"""
+        if self.process.state() == QProcess.NotRunning:
+            return
         self.is_stopping = True
         self.process.terminate()
+        # Wait up to 5 seconds for the process to finish
+        if not self.process.waitForFinished(5000):
+            # If it doesn't finish gracefully, kill it
+            self.process.kill()
+            self.process.waitForFinished(1000)
 
     def write_to_process(self, data):
         """Writes to the process"""
@@ -325,7 +332,6 @@ class ProcessController(QObject):
                 wait_text, callback, send_text = wait_item
 
             if wait_text in output:
-                print(1)
                 self.waiting_list.remove(wait_item)
                 if send_text:
                     self.process_service.write_to_process(send_text)

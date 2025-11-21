@@ -252,11 +252,6 @@ class Workflow(QObject):
 
         def handle_process_errored(err_msg):
             """Called when process errors out"""
-            self.process_runner.output_received.disconnect(handle_process_output_received)
-            self.process_runner.error_received.disconnect(handle_process_error_received)
-            self.process_runner.process_errored.disconnect(handle_process_errored)
-            self.process_runner.process_finished.disconnect(handle_process_finished)
-
             self.logger.error(f"{texts.LOG_PROCESS_ERRORED} {err_msg}")
             self.__change_state(State.FAILED, {
                 "status": texts.STATUS_PROCESS_ERRORED,
@@ -265,11 +260,6 @@ class Workflow(QObject):
 
         def handle_process_finished(return_code):
             """Called when process returns/exits"""
-            self.process_runner.output_received.disconnect(handle_process_output_received)
-            self.process_runner.error_received.disconnect(handle_process_error_received)
-            self.process_runner.process_errored.disconnect(handle_process_errored)
-            self.process_runner.process_finished.disconnect(handle_process_finished)
-
             self.logger.info(f"{texts.LOG_PROCESS_EXITED} {return_code}")
             if return_code == 0:
                 self.connect_cables()

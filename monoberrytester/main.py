@@ -166,6 +166,11 @@ class Main(QMainWindow):
         """Listens for key presses and forward them to workflow class"""
         self.workflow.key_pressed(event)
 
+    def closeEvent(self, event): # pylint: disable=invalid-name
+        """Handle window close event to ensure proper cleanup"""
+        self.workflow.reset()
+        event.accept()
+
 def main():
     """App entrypoint"""
     app = QApplication(sys.argv)
