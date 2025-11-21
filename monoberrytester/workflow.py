@@ -77,14 +77,7 @@ class Workflow(QObject):
         self.process_runner     = process_runner
         self.process_controller = process_controller
 
-        # Connect to external services signals
-        self.scanner.code_received.connect(self.__handle_scanned_codes)
-        self.server_client.response_received.connect(self.__handle_server_response)
-        self.server_client.error_occured.connect(self.__handle_server_error)
-        self.serial.connected.connect(self.__handle_serial_connected)
-        self.serial.error_occurred.connect(self.__handle_serial_error_occured)
-        self.serial.line_received.connect(self.__log_serial)
-
+        # Setup threads for services
         self.server_thread = QThread()
         self.server_client.moveToThread(self.server_thread)
         self.server_thread.started.connect(self.server_client.run)
@@ -93,10 +86,8 @@ class Workflow(QObject):
         self.serial.moveToThread(self.serial_thread)
         self.serial_thread.started.connect(self.serial.run)
 
-        self.process_runner.output_received.connect(self.__handle_process_output_received)
-        self.process_runner.error_received.connect(self.__handle_process_error_received)
-        self.process_runner.process_errored.connect(self.__handle_process_errored)
-        self.process_runner.process_finished.connect(self.__handle_process_finished)
+        # Connect persistent logging handler
+        self.serial.line_received.connect(self.__log_serial)
 
     def reset(self):
         """Resets back to idle state in order to do retry upon failure"""
@@ -121,37 +112,127 @@ class Workflow(QObject):
         self.connect_to_uart()
 
     def connect_to_uart(self):
-        """Tests UART connection to the board
-        
-        Continues in __handle_serial_connected"""
+        """Tests UART connection to the board"""
+
+        def handle_serial_connected():
+            """Called on successful serial connection"""
+            self.serial.connected.disconnect(handle_serial_connected)
+            self.serial.error_occurred.disconnect(handle_serial_error_occurred)
+
+            self.logger.info(texts.LOG_INFO_UART_CONNECTED)
+            self.scan_serial_num()
+
+        def handle_serial_error_occurred(err_msg):
+            """Called on failed serial connection"""
+            self.serial.connected.disconnect(handle_serial_connected)
+            self.serial.error_occurred.disconnect(handle_serial_error_occurred)
+
+            self.logger.error(f"{texts.LOG_ERROR_UART_FAILED} {err_msg}")
+            self.__change_state(State.FAILED, {
+                "status": texts.STATUS_CONN_TO_UART_FAILED,
+                "err_msg": err_msg
+            })
+            self.test_state_changed.emit(TestKeys.CONN_TO_UART, TestState.FAILED)
+
         self.__change_state(State.CONNECTING_TO_UART)
         self.test_state_changed.emit(TestKeys.CONN_TO_UART, TestState.RUNNING)
+
+        # Connect handlers for this workflow step
+        self.serial.connected.connect(handle_serial_connected)
+        self.serial.error_occurred.connect(handle_serial_error_occurred)
+
         self.serial_thread.start()
 
     def scan_serial_num(self):
-        """Prompts the user to scan the serial number
+        """Prompts the user to scan the serial number"""
 
-        Continues in __handle_scanned_codes method"""
+        def handle_scanned_serial(code):
+            """Called upon successfully receiving serial number from scanner"""
+            self.scanner.code_received.disconnect(handle_scanned_serial)
+
+            self.serial_num = code
+            self.serial_scanned.emit(self.serial_num)
+            self.scan_qr_codes()
+
         self.test_state_changed.emit(TestKeys.CONN_TO_UART, TestState.SUCCEEDED)
         self.__change_state(State.SCANNING_SERIAL_NUM)
         self.test_state_changed.emit(TestKeys.SCAN_SERIAL_NUM, TestState.RUNNING)
 
-    def scan_qr_codes(self):
-        """Prompts user to scan two data matrix codes
+        # Connect handler for serial number scanning
+        self.scanner.code_received.connect(handle_scanned_serial)
 
-        Continues in __handle_scanned_codes method"""
+    def scan_qr_codes(self):
+        """Prompts user to scan two data matrix codes"""
+
+        def handle_scanned_qr(code):
+            """Called upon successfully receiving QR code from scanner"""
+            self.scanned_codes.append(code)
+            self.code_scanned.emit(self.scanned_codes)
+
+            if len(self.scanned_codes) == 1:
+                self.logger.info(f"{texts.LOG_INFO_FIRST_CODE_SCANNED} {code}")
+            elif len(self.scanned_codes) == 2:
+                self.scanner.code_received.disconnect(handle_scanned_qr)
+
+                self.logger.info(f"{texts.LOG_INFO_SECOND_CODE_SCANNED} {code}")
+                self.register_device_and_get_macs()
+            else:
+                self.scanner.code_received.disconnect(handle_scanned_qr)
+
+                self.logger.error(texts.LOG_ERROR_MORE_THAN_2_QR_SCANNED)
+                self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.FAILED)
+
         self.test_state_changed.emit(TestKeys.SCAN_SERIAL_NUM, TestState.SUCCEEDED)
         self.__change_state(State.SCANNING_QR_CODES)
         self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.RUNNING)
 
+        # Connect handler for QR code scanning
+        self.scanner.code_received.connect(handle_scanned_qr)
+
     def register_device_and_get_macs(self):
         """Connect to our server to register device and get MAC addresses
-        based on the serial and provided data matrix QR codes
+        based on the serial and provided data matrix QR codes"""
 
-        Continues in __handle_server_response method"""
+        def handle_server_response(success: bool, response: str):
+            """Called upon receiving a response from the server"""
+            self.server_client.response_received.disconnect(handle_server_response)
+            self.server_client.error_occured.disconnect(handle_server_error)
+
+            self.server_thread.quit()
+            self.server_thread.wait()
+
+            if success:
+                self.logger.info(f"{texts.LOG_INFO_SERVER_RESPONSE} {response}")
+                r = response.split()
+                self.serial_num = r[0]
+                self.mac_addresses = r[1:]
+                self.load_uboot_via_jtag()
+            else:
+                self.logger.error(f"{texts.LOG_INFO_SERVER_ERROR} {response}")
+                self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.FAILED)
+
+        def handle_server_error(err_msg):
+            """Called upon server connection error"""
+            self.server_client.response_received.disconnect(handle_server_response)
+            self.server_client.error_occured.disconnect(handle_server_error)
+
+            self.server_thread.quit()
+            self.server_thread.wait()
+
+            self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.FAILED)
+            self.__change_state(State.FAILED, {
+                "status": texts.CONN_TO_SERVER_FAILED,
+                "err_msg": err_msg
+            })
+
         self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.SUCCEEDED)
         self.__change_state(State.REGISTERING_DEVICE)
         self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.RUNNING)
+
+        # Connect handlers for server communication
+        self.server_client.response_received.connect(handle_server_response)
+        self.server_client.error_occured.connect(handle_server_error)
+
         self.server_client.set_params(self.serial_num, self.scanned_codes)
         self.server_client.send_qrs()
         if not self.server_thread.isRunning():
@@ -159,18 +240,68 @@ class Workflow(QObject):
 
     def load_uboot_via_jtag(self):
         """Init board and load U-Boot in memory via external program"""
+
+        def handle_process_output_received(text):
+            """Called when program outputs something to stdout"""
+            self.logger.info(text)
+
+        def handle_process_error_received(err_msg):
+            """Called when program outputs something to stderr"""
+            self.logger.error(err_msg)
+
+        def handle_process_errored(err_msg):
+            """Called when process errors out"""
+            self.process_runner.output_received.disconnect(handle_process_output_received)
+            self.process_runner.error_received.disconnect(handle_process_error_received)
+            self.process_runner.process_errored.disconnect(handle_process_errored)
+            self.process_runner.process_finished.disconnect(handle_process_finished)
+
+            self.logger.error(f"{texts.LOG_PROCESS_ERRORED} {err_msg}")
+            self.__change_state(State.FAILED, {
+                "status": texts.STATUS_PROCESS_ERRORED,
+                "err_msg": err_msg
+            })
+
+        def handle_process_finished(return_code):
+            """Called when process returns/exits"""
+            self.process_runner.output_received.disconnect(handle_process_output_received)
+            self.process_runner.error_received.disconnect(handle_process_error_received)
+            self.process_runner.process_errored.disconnect(handle_process_errored)
+            self.process_runner.process_finished.disconnect(handle_process_finished)
+
+            self.logger.info(f"{texts.LOG_PROCESS_EXITED} {return_code}")
+            if return_code == 0:
+                self.connect_cables()
+            else:
+                self.logger.error(texts.LOG_PROCESS_EXITED_NON_0_CODE)
+
         self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.SUCCEEDED)
         self.__change_state(State.LOADING_UBOOT_VIA_JTAG)
         self.test_state_changed.emit(TestKeys.LOAD_UBOOT_VIA_JTAG, TestState.RUNNING)
+
+        # Connect handlers for process execution
+        self.process_runner.output_received.connect(handle_process_output_received)
+        self.process_runner.error_received.connect(handle_process_error_received)
+        self.process_runner.process_errored.connect(handle_process_errored)
+        self.process_runner.process_finished.connect(handle_process_finished)
+
         self.process_controller.wait_for("inspect mode", self.connect_cables)
         self.process_runner.start("irb", [])
 
     def connect_cables(self):
         """Prompts user to connect the rest of the cables"""
+
+        def handle_serial_line_received():
+            """Called when data is received via serial connection"""
+            if self.state == State.CONNECTING_CABLES:
+                self.logger.info(texts.LOG_INFO_UART_DATA_RECEIVED)
+                self.__change_state(State.WAITING_FOR_UBOOT)
+                self.wait_for_uboot()
+
         self.test_state_changed.emit(TestKeys.LOAD_UBOOT_VIA_JTAG, TestState.SUCCEEDED)
         self.__change_state(State.CONNECTING_CABLES)
         self.test_state_changed.emit(TestKeys.RECEIVE_DATA_VIA_UART, TestState.RUNNING)
-        self.serial_controller.wait_for("", self.__handle_serial_line_received)
+        self.serial_controller.wait_for("", handle_serial_line_received)
 
     def wait_for_uboot(self):
         """Wait for u-boot prompt"""
@@ -198,94 +329,6 @@ class Workflow(QObject):
         self.state = state
         self.state_changed.emit(msgs)
 
-    def __handle_scanned_codes(self, code):
-        """Called upon successfully receiving a code from the scanner"""
-        if self.state == State.SCANNING_SERIAL_NUM:
-            self.serial_num = code
-            self.serial_scanned.emit(self.serial_num)
-            self.scan_qr_codes()
-        elif self.state == State.SCANNING_QR_CODES:
-            self.scanned_codes.append(code)
-            self.code_scanned.emit(self.scanned_codes)
-
-            if len(self.scanned_codes) == 1:
-                self.logger.info(f"{texts.LOG_INFO_FIRST_CODE_SCANNED} {code}")
-            elif len(self.scanned_codes) == 2:
-                self.logger.info(f"{texts.LOG_INFO_SECOND_CODE_SCANNED} {code}")
-                self.register_device_and_get_macs()
-            else:
-                self.logger.error(texts.LOG_ERROR_MORE_THAN_2_QR_SCANNED)
-                self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.FAILED)
-
-    def __handle_server_response(self, success: bool, response: str):
-        """Called upon receiving a response from the server"""
-        self.server_thread.quit()
-        self.server_thread.wait()
-
-        if success:
-            self.logger.info(f"{texts.LOG_INFO_SERVER_RESPONSE} {response}")
-            r = response.split()
-            self.serial_num = r[0]
-            self.mac_addresses = r[1:]
-            self.load_uboot_via_jtag()
-        else:
-            self.logger.error(f"{texts.LOG_INFO_SERVER_ERROR} {response}")
-            self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.FAILED)
-
-    def __handle_server_error(self, err_msg):
-        self.server_thread.quit()
-        self.server_thread.wait()
-
-        self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.FAILED)
-        self.__change_state(State.FAILED, {
-            "status": texts.CONN_TO_SERVER_FAILED,
-            "err_msg": err_msg
-        })
-
-    def __handle_serial_connected(self):
-        """Called on successful serial connection"""
-        self.logger.info(texts.LOG_INFO_UART_CONNECTED)
-        self.scan_serial_num()
-
-    def __handle_serial_error_occured(self, err_msg):
-        """Called on failed serial connection"""
-        self.logger.error(f"{texts.LOG_ERROR_UART_FAILED} {err_msg}")
-        self.__change_state(State.FAILED, {
-            "status": texts.STATUS_CONN_TO_UART_FAILED,
-            "err_msg": err_msg
-        })
-        self.test_state_changed.emit(TestKeys.CONN_TO_UART, TestState.FAILED)
-
-    def __handle_serial_line_received(self):
-        """Called when data is received via serial connection"""
-        if self.state == State.CONNECTING_CABLES:
-            self.logger.info(texts.LOG_INFO_UART_DATA_RECEIVED)
-            self.__change_state(State.WAITING_FOR_UBOOT)
-            self.wait_for_uboot()
-
-    def __handle_process_output_received(self, text):
-        """Called when program outputs someting to stdout"""
-        self.logger.info(text)
-
-    def __handle_process_error_received(self, err_msg):
-        """Called when program outputs something to stderr"""
-        self.logger.error(err_msg)
-
-    def __handle_process_errored(self, err_msg):
-        """Called when process errors out"""
-        self.logger.error(f"{texts.LOG_PROCESS_ERRORED} {err_msg}")
-        self.__change_state(State.FAILED, {
-            "status": texts.STATUS_PROCESS_ERRORED,
-            "err_msg": err_msg
-        })
-
-    def __handle_process_finished(self, return_code):
-        """Called when process returns/exits"""
-        self.logger.info(f"{texts.LOG_PROCESS_EXITED} {return_code}")
-        if return_code == 0:
-            self.connect_cables()
-        else:
-            self.logger.error(texts.LOG_PROCESS_EXITED_NON_0_CODE)
-
     def __log_serial(self, data: str):
+        """Persistent handler for logging all serial data"""
         self.logger.info(data, False)
