@@ -207,6 +207,10 @@ class SerialController(QObject):
         """Adds a text to wait for in the waiting_list"""
         self.waiting_list.append((wait_text, callback))
 
+    def send(self, send_text) -> bool:
+        """Sends the text to serial"""
+        self.serial_service.send(send_text)
+
     def wait_for_and_send(self, wait_text, send_text, callback) -> bool:
         """Adds a text to wait for and text to send after in the waiting_list"""
         self.waiting_list.append((wait_text, callback, send_text))

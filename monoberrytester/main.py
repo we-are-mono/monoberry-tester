@@ -75,7 +75,6 @@ class Main(QMainWindow):
             State.SCANNING_QR_CODES:        self.__update_ui_scanning_qr_codes,
             State.REGISTERING_DEVICE:       self.__update_ui_register_device,
             State.LOADING_UBOOT_VIA_JTAG:   self.__update_ui_loading_uboot_via_jtag,
-            State.CONNECTING_CABLES:        self.__update_ui_connecting_cables,
             State.WAITING_FOR_UBOOT:        self.__update_ui_waiting_for_uboot,
             State.DONE:                     self.__update_ui_done,
             State.FAILED:                   self.__update_ui_failed
@@ -147,9 +146,6 @@ class Main(QMainWindow):
     def __update_ui_loading_uboot_via_jtag(self):
         """Updates UI to reflect loading u-boot via JTAG"""
         self.ui.update_status(texts.STATUS_LOADING_UBOOT_VIA_JTAG)
-    def __update_ui_connecting_cables(self):
-        """Updates UI to reflect connecting cables state"""
-        self.ui.update_status(texts.STATUS_CONNECT_CABLES)
 
     def __update_ui_waiting_for_uboot(self):
         self.ui.update_status(texts.STATUS_WAITING_FOR_UBOOT_PROMPT)

@@ -22,7 +22,6 @@ class State(Enum):
     SCANNING_QR_CODES           = auto()
     REGISTERING_DEVICE          = auto()
     LOADING_UBOOT_VIA_JTAG      = auto()
-    CONNECTING_CABLES           = auto()
     WAITING_FOR_UBOOT           = auto()
     DONE                        = auto()
     FAILED                      = auto()
@@ -138,7 +137,6 @@ class Workflow(QObject):
         self.__change_state(State.CONNECTING_TO_UART)
         self.test_state_changed.emit(TestKeys.CONN_TO_UART, TestState.RUNNING)
 
-        # Connect handlers for this workflow step
         self.serial.connected.connect(handle_serial_connected)
         self.serial.error_occurred.connect(handle_serial_error_occurred)
 
@@ -159,7 +157,6 @@ class Workflow(QObject):
         self.__change_state(State.SCANNING_SERIAL_NUM)
         self.test_state_changed.emit(TestKeys.SCAN_SERIAL_NUM, TestState.RUNNING)
 
-        # Connect handler for serial number scanning
         self.scanner.code_received.connect(handle_scanned_serial)
 
     def scan_qr_codes(self):
@@ -187,7 +184,6 @@ class Workflow(QObject):
         self.__change_state(State.SCANNING_QR_CODES)
         self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.RUNNING)
 
-        # Connect handler for QR code scanning
         self.scanner.code_received.connect(handle_scanned_qr)
 
     def register_device_and_get_macs(self):
@@ -230,7 +226,6 @@ class Workflow(QObject):
         self.__change_state(State.REGISTERING_DEVICE)
         self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.RUNNING)
 
-        # Connect handlers for server communication
         self.server_client.response_received.connect(handle_server_response)
         self.server_client.error_occured.connect(handle_server_error)
 
@@ -262,42 +257,32 @@ class Workflow(QObject):
             """Called when process returns/exits"""
             self.logger.info(f"{texts.LOG_PROCESS_EXITED} {return_code}")
             if return_code == 0:
-                self.connect_cables()
+                pass
             else:
                 self.logger.error(texts.LOG_PROCESS_EXITED_NON_0_CODE)
+
+        def handle_exiting():
+            self.process_runner.stop()
+            self.wait_for_uboot()
 
         self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.SUCCEEDED)
         self.__change_state(State.LOADING_UBOOT_VIA_JTAG)
         self.test_state_changed.emit(TestKeys.LOAD_UBOOT_VIA_JTAG, TestState.RUNNING)
 
-        # Connect handlers for process execution
         self.process_runner.output_received.connect(handle_process_output_received)
         self.process_runner.error_received.connect(handle_process_error_received)
         self.process_runner.process_errored.connect(handle_process_errored)
         self.process_runner.process_finished.connect(handle_process_finished)
 
-        self.process_controller.wait_for("inspect mode", self.connect_cables)
-        self.process_runner.start("irb", [])
-
-    def connect_cables(self):
-        """Prompts user to connect the rest of the cables"""
-
-        def handle_serial_line_received():
-            """Called when data is received via serial connection"""
-            if self.state == State.CONNECTING_CABLES:
-                self.logger.info(texts.LOG_INFO_UART_DATA_RECEIVED)
-                self.__change_state(State.WAITING_FOR_UBOOT)
-                self.wait_for_uboot()
-
-        self.test_state_changed.emit(TestKeys.LOAD_UBOOT_VIA_JTAG, TestState.SUCCEEDED)
-        self.__change_state(State.CONNECTING_CABLES)
-        self.test_state_changed.emit(TestKeys.RECEIVE_DATA_VIA_UART, TestState.RUNNING)
-        self.serial_controller.wait_for("", handle_serial_line_received)
+        self.process_controller.wait_for("lsbp.tcl is exiting...", handle_exiting)
+        self.process_runner.start("/home/rdme/CCS/bin/ccs", ["-nogfx", "-console", "-file", "/home/rdme/TAP/lsbp.tcl"])
 
     def wait_for_uboot(self):
         """Wait for u-boot prompt"""
-        self.test_state_changed.emit(TestKeys.RECEIVE_DATA_VIA_UART, TestState.SUCCEEDED)
-        self.serial_controller.wait_for_and_send("stop autoboot", "STOP!\r\n", self.done)
+        self.test_state_changed.emit(TestKeys.LOAD_UBOOT_VIA_JTAG, TestState.SUCCEEDED)
+        # self.serial_controller.wait_for("=>", self.done)
+        # self.serial_controller.send("\r\n")
+        self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", self.done)
         self.test_state_changed.emit(TestKeys.RECEIVE_UBOOT_PROMPT, TestState.RUNNING)
 
     def done(self):
