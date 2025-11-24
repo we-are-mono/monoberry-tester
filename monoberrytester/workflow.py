@@ -296,9 +296,9 @@ class Workflow(QObject):
 
             self.process_runner.stop()
             ctx.succeed()
-            self.wait_for_uboot()
+            self.wait_for_uboot_spl()
 
-        self.__change_state(State.RUNNING, texts.STATUS_LOADING_UBOOT_VIA_JTAG)
+        self.__change_state(State.RUNNING, texts.STATUS_LOADING_UBOOT_SPL_VIA_JTAG)
 
         self.process_runner.output_received.connect(handle_process_output_received)
         self.process_runner.error_received.connect(handle_process_error_received)
@@ -308,16 +308,14 @@ class Workflow(QObject):
         self.process_controller.wait_for("lsbp.tcl is exiting...", handle_exiting)
         self.process_runner.start("/home/rdme/CCS/bin/ccs", ["-nogfx", "-console", "-file", "/home/rdme/TAP/lsbp.tcl"])
 
-    @test_method(TestKeys.RECEIVE_UBOOT_PROMPT)
-    def wait_for_uboot(self, ctx):
+    @test_method(TestKeys.WAIT_FOR_UBOOT_SPL_PROMPT)
+    def wait_for_uboot_spl(self, ctx):
         """Wait for u-boot prompt"""
-        self.__change_state(State.RUNNING, texts.STATUS_WAITING_FOR_UBOOT_PROMPT)
-        # self.serial_controller.wait_for("=>", lambda: self.done(ctx))
-        # self.serial_controller.send("\r\n")
+        self.__change_state(State.RUNNING, texts.STATUS_WAITING_FOR_UBOOT_SPL_PROMPT)
         self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", lambda: self.done(ctx))
 
     def done(self, ctx):
-        """Done, all tests have successfull passed and the board is
+        """Done, all tests have successfully passed and the board is
         fully functional (according to our knowledge)"""
         ctx.succeed()
         self.__change_state(State.DONE, texts.STATUS_DONE)
