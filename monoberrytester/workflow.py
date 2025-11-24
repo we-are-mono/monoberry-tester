@@ -15,16 +15,10 @@ from services import *
 
 class State(Enum):
     """Class to define states of the application"""
-    IDLE                        = auto()
-    STARTED                     = auto()
-    CONNECTING_TO_UART          = auto()
-    SCANNING_SERIAL_NUM         = auto()
-    SCANNING_QR_CODES           = auto()
-    REGISTERING_DEVICE          = auto()
-    LOADING_UBOOT_VIA_JTAG      = auto()
-    WAITING_FOR_UBOOT           = auto()
-    DONE                        = auto()
-    FAILED                      = auto()
+    IDLE    = auto()
+    RUNNING = auto()
+    DONE    = auto()
+    FAILED  = auto()
 
 class Workflow(QObject):
     """The class capturing the 'business' logic.
@@ -44,7 +38,7 @@ class Workflow(QObject):
         process_runner (ProcessService): Service managing running processes and reading and sending data to/from them
     """
 
-    state_changed = pyqtSignal(dict)
+    state_changed = pyqtSignal(State, str)
     serial_scanned = pyqtSignal(str)
     code_scanned = pyqtSignal(list)
     test_state_changed = pyqtSignal(TestKeys, TestState)
@@ -63,6 +57,7 @@ class Workflow(QObject):
 
         # State
         self.state          = State.IDLE
+        self.current_test   = None
         self.scanned_codes  = []
         self.mac_addresses  = []
         self.serial_num     = None
@@ -91,6 +86,7 @@ class Workflow(QObject):
     def reset(self):
         """Resets back to idle state in order to do retry upon failure"""
         self.logger.info("--- Reseting ---")
+        self.current_test = None
         self.scanned_codes = []
         self.mac_addresses = []
         self.serial_num = None
@@ -100,7 +96,7 @@ class Workflow(QObject):
         self.serial_thread.wait()
         self.process_runner.stop()
 
-        self.__change_state(State.IDLE)
+        self.__change_state(State.IDLE, texts.STATUS_READY_TO_START)
 
     def start(self):
         """Entry point to start testing"""
@@ -108,7 +104,7 @@ class Workflow(QObject):
             self.logger.info(f"{texts.LOG_WRONG_STATE_TO_START_FROM} {self.state}")
             return
 
-        self.__change_state(State.STARTED)
+        self.__change_state(State.RUNNING, texts.STATUS_CONN_TO_UART)
         self.connect_to_uart()
 
     def connect_to_uart(self):
@@ -128,13 +124,9 @@ class Workflow(QObject):
             self.serial.error_occurred.disconnect(handle_serial_error_occurred)
 
             self.logger.error(f"{texts.LOG_ERROR_UART_FAILED} {err_msg}")
-            self.__change_state(State.FAILED, {
-                "status": texts.STATUS_CONN_TO_UART_FAILED,
-                "err_msg": err_msg
-            })
+            self.__change_state(State.FAILED, f"{texts.STATUS_CONN_TO_UART_FAILED} {err_msg}")
             self.test_state_changed.emit(TestKeys.CONN_TO_UART, TestState.FAILED)
 
-        self.__change_state(State.CONNECTING_TO_UART)
         self.test_state_changed.emit(TestKeys.CONN_TO_UART, TestState.RUNNING)
 
         self.serial.connected.connect(handle_serial_connected)
@@ -154,7 +146,8 @@ class Workflow(QObject):
             self.scan_qr_codes()
 
         self.test_state_changed.emit(TestKeys.CONN_TO_UART, TestState.SUCCEEDED)
-        self.__change_state(State.SCANNING_SERIAL_NUM)
+        self.current_test = TestKeys.SCAN_SERIAL_NUM
+        self.__change_state(State.RUNNING, texts.STATUS_SCAN_SERIAL_NUM)
         self.test_state_changed.emit(TestKeys.SCAN_SERIAL_NUM, TestState.RUNNING)
 
         self.scanner.code_received.connect(handle_scanned_serial)
@@ -181,7 +174,8 @@ class Workflow(QObject):
                 self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.FAILED)
 
         self.test_state_changed.emit(TestKeys.SCAN_SERIAL_NUM, TestState.SUCCEEDED)
-        self.__change_state(State.SCANNING_QR_CODES)
+        self.current_test = TestKeys.SCAN_TWO_DM_QR_CODES
+        self.__change_state(State.RUNNING, texts.STATUS_SCAN_QR_TOP)
         self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.RUNNING)
 
         self.scanner.code_received.connect(handle_scanned_qr)
@@ -217,13 +211,10 @@ class Workflow(QObject):
             self.server_thread.wait()
 
             self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.FAILED)
-            self.__change_state(State.FAILED, {
-                "status": texts.CONN_TO_SERVER_FAILED,
-                "err_msg": err_msg
-            })
+            self.__change_state(State.FAILED, f"{texts.CONN_TO_SERVER_FAILED} {err_msg}")
 
         self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.SUCCEEDED)
-        self.__change_state(State.REGISTERING_DEVICE)
+        self.__change_state(State.RUNNING, texts.STATUS_REGISTER_DEVICE)
         self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.RUNNING)
 
         self.server_client.response_received.connect(handle_server_response)
@@ -248,10 +239,7 @@ class Workflow(QObject):
         def handle_process_errored(err_msg):
             """Called when process errors out"""
             self.logger.error(f"{texts.LOG_PROCESS_ERRORED} {err_msg}")
-            self.__change_state(State.FAILED, {
-                "status": texts.STATUS_PROCESS_ERRORED,
-                "err_msg": err_msg
-            })
+            self.__change_state(State.FAILED, f"{texts.STATUS_PROCESS_ERRORED} {err_msg}")
 
         def handle_process_finished(return_code):
             """Called when process returns/exits"""
@@ -266,7 +254,7 @@ class Workflow(QObject):
             self.wait_for_uboot()
 
         self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.SUCCEEDED)
-        self.__change_state(State.LOADING_UBOOT_VIA_JTAG)
+        self.__change_state(State.RUNNING, texts.STATUS_LOADING_UBOOT_VIA_JTAG)
         self.test_state_changed.emit(TestKeys.LOAD_UBOOT_VIA_JTAG, TestState.RUNNING)
 
         self.process_runner.output_received.connect(handle_process_output_received)
@@ -280,6 +268,7 @@ class Workflow(QObject):
     def wait_for_uboot(self):
         """Wait for u-boot prompt"""
         self.test_state_changed.emit(TestKeys.LOAD_UBOOT_VIA_JTAG, TestState.SUCCEEDED)
+        self.__change_state(State.RUNNING, texts.STATUS_WAITING_FOR_UBOOT_PROMPT)
         # self.serial_controller.wait_for("=>", self.done)
         # self.serial_controller.send("\r\n")
         self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", self.done)
@@ -289,21 +278,19 @@ class Workflow(QObject):
         """Done, all tests have successfull passed and the board is
         fully functional (according to our knowledge)"""
         self.test_state_changed.emit(TestKeys.RECEIVE_UBOOT_PROMPT, TestState.SUCCEEDED)
-        self.__change_state(State.DONE)
+        self.__change_state(State.DONE, texts.STATUS_DONE)
         self.logger.info(texts.LOG_INFO_DONE)
 
     def key_pressed(self, event):
         """Handler for all key presses.
         But it only forwards to scanner service if scanning QR codes state"""
-        if self.state in (State.SCANNING_QR_CODES, State.SCANNING_SERIAL_NUM):
+        if self.current_test in (TestKeys.SCAN_SERIAL_NUM, TestKeys.SCAN_TWO_DM_QR_CODES):
             self.scanner.handle_input(event.key(), event.text())
 
-    def __change_state(self, state, msgs=None):
+    def __change_state(self, state, message=""):
         """Helper to make sure state_changed is emited also on state change"""
-        if msgs is None:
-            msgs = {}
         self.state = state
-        self.state_changed.emit(msgs)
+        self.state_changed.emit(state, message)
 
     def __log_serial(self, data: str):
         """Persistent handler for logging all serial data"""

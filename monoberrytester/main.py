@@ -67,19 +67,6 @@ class Main(QMainWindow):
         self.workflow.state_changed.connect(self.__update_ui)
         self.workflow.test_state_changed.connect(self.__update_test_ui)
 
-        self.state_handlers = {
-            State.IDLE:                     self.__update_ui_idle,
-            State.STARTED:                  self.__update_ui_started,
-            State.CONNECTING_TO_UART:       self.__update_ui_connecting_to_uart,
-            State.SCANNING_SERIAL_NUM:      self.__update_ui_scanning_serial_num,
-            State.SCANNING_QR_CODES:        self.__update_ui_scanning_qr_codes,
-            State.REGISTERING_DEVICE:       self.__update_ui_register_device,
-            State.LOADING_UBOOT_VIA_JTAG:   self.__update_ui_loading_uboot_via_jtag,
-            State.WAITING_FOR_UBOOT:        self.__update_ui_waiting_for_uboot,
-            State.DONE:                     self.__update_ui_done,
-            State.FAILED:                   self.__update_ui_failed
-        }
-
     def __update_logs_ui(self, text, is_error, should_display):
         if not should_display:
             return
@@ -105,58 +92,22 @@ class Main(QMainWindow):
         """Updates state for a given test"""
         self.ui.set_test_state(name, state)
 
-    def __update_ui(self, msgs):
+    def __update_ui(self, state, message):
         """Generic method to update UI on state change"""
-        state = self.workflow.state
-        handler = self.state_handlers.get(state)
-        if msgs:
-            handler(msgs)
-        else:
-            handler()
+        # Handle state-specific UI changes
+        if state == State.IDLE:
+            self.ui.clear_qr_codes()
+            self.ui.start_btn_enable()
+            self.ui.reset_btn_disable()
+            self.ui.mark_all_tests_idle()
+        elif state == State.RUNNING:
+            self.ui.start_btn_disable()
+            self.ui.reset_btn_enable()
 
-    def __update_ui_idle(self):
-        """Updates UI to reflect idle state"""
-        self.ui.update_status(texts.STATUS_READY_TO_START)
-        self.ui.clear_qr_codes()
-        self.ui.start_btn_enable()
-        self.ui.reset_btn_disable()
-        self.ui.mark_all_tests_idle()
-
-    def __update_ui_started(self):
-        """Updates UI to reflect started state"""
-        self.ui.start_btn_disable()
-        self.ui.reset_btn_enable()
-
-    def __update_ui_connecting_to_uart(self):
-        """Updates UI to reflect connecting to UART state"""
-        self.ui.update_status(texts.STATUS_CONN_TO_UART)
-
-    def __update_ui_scanning_serial_num(self):
-        """Updates UI to reflect scanning serial number state"""
-        self.ui.update_status(texts.STATUS_SCAN_SERIAL_NUM)
-
-    def __update_ui_scanning_qr_codes(self):
-        """Updates UI to reflect scanning QR codes state"""
-        self.ui.update_status(texts.STATUS_SCAN_QR_TOP)
-
-    def __update_ui_register_device(self):
-        """Updates UI to reflect registering the device"""
-        self.ui.update_status(texts.STATUS_REGISTER_DEVICE)
-
-    def __update_ui_loading_uboot_via_jtag(self):
-        """Updates UI to reflect loading u-boot via JTAG"""
-        self.ui.update_status(texts.STATUS_LOADING_UBOOT_VIA_JTAG)
-
-    def __update_ui_waiting_for_uboot(self):
-        self.ui.update_status(texts.STATUS_WAITING_FOR_UBOOT_PROMPT)
-
-    def __update_ui_done(self):
-        """Updates UI to reflect done state"""
-        self.ui.update_status(texts.STATUS_DONE)
-
-    def __update_ui_failed(self, msgs):
-        """Updates UI to reflect failed state"""
-        self.ui.update_status(msgs["status"], is_err=True)
+        # Update status message
+        is_error = (state == State.FAILED)
+        if message:
+            self.ui.update_status(message, is_err=is_error)
 
     def keyPressEvent(self, event): # pylint: disable=invalid-name
         """Listens for key presses and forward them to workflow class"""
