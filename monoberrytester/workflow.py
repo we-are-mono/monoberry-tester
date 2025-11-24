@@ -5,6 +5,7 @@ All 'business' logic
 """
 
 from enum import Enum, auto
+from functools import wraps
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
 import texts
@@ -12,6 +13,43 @@ from ui import TestState
 from tests import TestKeys
 
 from services import *
+
+def test_method(test_key):
+    """Decorator that automatically emits test state changes.
+
+    Emits RUNNING when the method starts, and provides a TestContext
+    object that callbacks can use to emit SUCCEEDED or FAILED states.
+
+    Args:
+        test_key: The TestKeys enum value for this test
+
+    Usage:
+        @test_method(TestKeys.CONN_TO_UART)
+        def connect_to_uart(self, ctx):
+            def handle_success():
+                ctx.succeed()
+
+            def handle_failure():
+                ctx.fail()
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            # Emit RUNNING state
+            self.test_state_changed.emit(test_key, TestState.RUNNING)
+
+            # Create context object for callbacks to use
+            class TestContext:
+                def succeed(ctx_self):
+                    self.test_state_changed.emit(test_key, TestState.SUCCEEDED)
+
+                def fail(ctx_self):
+                    self.test_state_changed.emit(test_key, TestState.FAILED)
+
+            ctx = TestContext()
+            return func(self, ctx, *args, **kwargs)
+        return wrapper
+    return decorator
 
 class State(Enum):
     """Class to define states of the application"""
@@ -107,7 +145,8 @@ class Workflow(QObject):
         self.__change_state(State.RUNNING, texts.STATUS_CONN_TO_UART)
         self.connect_to_uart()
 
-    def connect_to_uart(self):
+    @test_method(TestKeys.CONN_TO_UART)
+    def connect_to_uart(self, ctx):
         """Tests UART connection to the board"""
 
         def handle_serial_connected():
@@ -116,7 +155,7 @@ class Workflow(QObject):
             self.serial.error_occurred.disconnect(handle_serial_error_occurred)
 
             self.logger.info(texts.LOG_INFO_UART_CONNECTED)
-            self.test_state_changed.emit(TestKeys.CONN_TO_UART, TestState.SUCCEEDED)
+            ctx.succeed()
             self.scan_serial_num()
 
         def handle_serial_error_occurred(err_msg):
@@ -126,16 +165,15 @@ class Workflow(QObject):
 
             self.logger.error(f"{texts.LOG_ERROR_UART_FAILED} {err_msg}")
             self.__change_state(State.FAILED, f"{texts.STATUS_CONN_TO_UART_FAILED} {err_msg}")
-            self.test_state_changed.emit(TestKeys.CONN_TO_UART, TestState.FAILED)
-
-        self.test_state_changed.emit(TestKeys.CONN_TO_UART, TestState.RUNNING)
+            ctx.fail()
 
         self.serial.connected.connect(handle_serial_connected)
         self.serial.error_occurred.connect(handle_serial_error_occurred)
 
         self.serial_thread.start()
 
-    def scan_serial_num(self):
+    @test_method(TestKeys.SCAN_SERIAL_NUM)
+    def scan_serial_num(self, ctx):
         """Prompts the user to scan the serial number"""
 
         def handle_scanned_serial(code):
@@ -144,16 +182,16 @@ class Workflow(QObject):
 
             self.serial_num = code
             self.serial_scanned.emit(self.serial_num)
-            self.test_state_changed.emit(TestKeys.SCAN_SERIAL_NUM, TestState.SUCCEEDED)
+            ctx.succeed()
             self.scan_qr_codes()
 
         self.current_test = TestKeys.SCAN_SERIAL_NUM
         self.__change_state(State.RUNNING, texts.STATUS_SCAN_SERIAL_NUM)
-        self.test_state_changed.emit(TestKeys.SCAN_SERIAL_NUM, TestState.RUNNING)
 
         self.scanner.code_received.connect(handle_scanned_serial)
 
-    def scan_qr_codes(self):
+    @test_method(TestKeys.SCAN_TWO_DM_QR_CODES)
+    def scan_qr_codes(self, ctx):
         """Prompts user to scan two data matrix codes"""
 
         def handle_scanned_qr(code):
@@ -167,21 +205,21 @@ class Workflow(QObject):
                 self.scanner.code_received.disconnect(handle_scanned_qr)
 
                 self.logger.info(f"{texts.LOG_INFO_SECOND_CODE_SCANNED} {code}")
-                self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.SUCCEEDED)
+                ctx.succeed()
                 self.register_device_and_get_macs()
             else:
                 self.scanner.code_received.disconnect(handle_scanned_qr)
 
                 self.logger.error(texts.LOG_ERROR_MORE_THAN_2_QR_SCANNED)
-                self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.FAILED)
+                ctx.fail()
 
         self.current_test = TestKeys.SCAN_TWO_DM_QR_CODES
         self.__change_state(State.RUNNING, texts.STATUS_SCAN_QR_TOP)
-        self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.RUNNING)
 
         self.scanner.code_received.connect(handle_scanned_qr)
 
-    def register_device_and_get_macs(self):
+    @test_method(TestKeys.REGISTER_DEVICE)
+    def register_device_and_get_macs(self, ctx):
         """Connect to our server to register device and get MAC addresses
         based on the serial and provided data matrix QR codes"""
 
@@ -198,11 +236,11 @@ class Workflow(QObject):
                 r = response.split()
                 self.serial_num = r[0]
                 self.mac_addresses = r[1:]
-                self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.SUCCEEDED)
-                self.load_uboot_via_jtag()
+                ctx.succeed()
+                self.load_uboot_spl_via_jtag()
             else:
                 self.logger.error(f"{texts.LOG_INFO_SERVER_ERROR} {response}")
-                self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.FAILED)
+                ctx.fail()
 
         def handle_server_error(err_msg):
             """Called upon server connection error"""
@@ -212,11 +250,10 @@ class Workflow(QObject):
             self.server_thread.quit()
             self.server_thread.wait()
 
-            self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.FAILED)
+            ctx.fail()
             self.__change_state(State.FAILED, f"{texts.CONN_TO_SERVER_FAILED} {err_msg}")
 
         self.__change_state(State.RUNNING, texts.STATUS_REGISTER_DEVICE)
-        self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.RUNNING)
 
         self.server_client.response_received.connect(handle_server_response)
         self.server_client.error_occured.connect(handle_server_error)
@@ -226,7 +263,8 @@ class Workflow(QObject):
         if not self.server_thread.isRunning():
             self.server_thread.start()
 
-    def load_uboot_via_jtag(self):
+    @test_method(TestKeys.LOAD_UBOOT_SPL_VIA_JTAG)
+    def load_uboot_spl_via_jtag(self, ctx):
         """Init board and load U-Boot in memory via external program"""
 
         def handle_process_output_received(text):
@@ -252,11 +290,10 @@ class Workflow(QObject):
 
         def handle_exiting():
             self.process_runner.stop()
-            self.test_state_changed.emit(TestKeys.LOAD_UBOOT_VIA_JTAG, TestState.SUCCEEDED)
+            ctx.succeed()
             self.wait_for_uboot()
 
         self.__change_state(State.RUNNING, texts.STATUS_LOADING_UBOOT_VIA_JTAG)
-        self.test_state_changed.emit(TestKeys.LOAD_UBOOT_VIA_JTAG, TestState.RUNNING)
 
         self.process_runner.output_received.connect(handle_process_output_received)
         self.process_runner.error_received.connect(handle_process_error_received)
@@ -266,18 +303,18 @@ class Workflow(QObject):
         self.process_controller.wait_for("lsbp.tcl is exiting...", handle_exiting)
         self.process_runner.start("/home/rdme/CCS/bin/ccs", ["-nogfx", "-console", "-file", "/home/rdme/TAP/lsbp.tcl"])
 
-    def wait_for_uboot(self):
+    @test_method(TestKeys.RECEIVE_UBOOT_PROMPT)
+    def wait_for_uboot(self, ctx):
         """Wait for u-boot prompt"""
         self.__change_state(State.RUNNING, texts.STATUS_WAITING_FOR_UBOOT_PROMPT)
-        # self.serial_controller.wait_for("=>", self.done)
+        # self.serial_controller.wait_for("=>", lambda: self.done(ctx))
         # self.serial_controller.send("\r\n")
-        self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", self.done)
-        self.test_state_changed.emit(TestKeys.RECEIVE_UBOOT_PROMPT, TestState.RUNNING)
+        self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", lambda: self.done(ctx))
 
-    def done(self):
+    def done(self, ctx):
         """Done, all tests have successfull passed and the board is
         fully functional (according to our knowledge)"""
-        self.test_state_changed.emit(TestKeys.RECEIVE_UBOOT_PROMPT, TestState.SUCCEEDED)
+        ctx.succeed()
         self.__change_state(State.DONE, texts.STATUS_DONE)
         self.logger.info(texts.LOG_INFO_DONE)
 
