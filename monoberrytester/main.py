@@ -24,7 +24,7 @@ import texts
 from ui import UI
 from workflow import State, Workflow
 from services import *
-from tests import TEST_DEFS
+from tests import TestKeys
 
 class Main(QMainWindow):
     """Class representing PyQt5 window
@@ -37,7 +37,7 @@ class Main(QMainWindow):
         super().__init__()
 
         # Init UI
-        self.ui = UI(TEST_DEFS)
+        self.ui = UI(TestKeys)
         self.setCentralWidget(self.ui)
         self.resize(1280, 720)
 

@@ -60,14 +60,14 @@ class TestWidget(QWidget):
 
 class UI(QWidget):
     """Class capturing all UI logic and operations
-    
+
     Args:
-        test_defs (dict): dictionary of test names and descriptions
+        test_keys_enum: TestKeys enum class with test definitions
     """
 
-    def __init__(self, test_defs: dict):
+    def __init__(self, test_keys_enum):
         super().__init__()
-        self.tests = self.__init_tests_widgets(test_defs)
+        self.tests = self.__init_tests_widgets(test_keys_enum)
         self.__init_ui()
 
     def __init_ui(self):
@@ -128,11 +128,11 @@ class UI(QWidget):
         layout.addLayout(right_panel, stretch=2)
         self.setLayout(layout)
 
-    def __init_tests_widgets(self, test_defs: dict) -> dict:
+    def __init_tests_widgets(self, test_keys_enum) -> dict:
         """Create UI for tests"""
         test_widgets = {}
-        for name, desc in test_defs.items():
-            test_widgets[name] = TestWidget(desc)
+        for test_key in test_keys_enum:
+            test_widgets[test_key] = TestWidget(test_key.description)
 
         return test_widgets
 

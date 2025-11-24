@@ -275,18 +275,15 @@ class ProcessService(QObject):
     def __handle_stdout(self):
         """Handler for receiving data via stdout"""
         data = bytes(self.process.readAllStandardOutput())
-        self.logger.info(f"ProcessService: {self.process.program()} {' '.join(self.process.arguments())} received:\n{data}")
         self.output_received.emit(data.decode("utf-8"))
 
     def __handle_stderr(self):
         """Handler for receiving data via stderr"""
         data = bytes(self.process.readAllStandardError())
-        self.logger.error(f"ProcessService: {self.process.program()} {' '.join(self.process.arguments())} error:\n{data}")
         self.error_received.emit(data.decode("utf-8"))
 
     def __handle_finished(self, exit_code, exit_status):
         """Handler for when process finishes"""
-        self.logger.info(f"ProcessService: {self.process.program()} {' '.join(self.process.arguments())} exited with {exit_code} {exit_status}")
         self.process_finished.emit(exit_code)
 
     def __handle_error(self, error):
