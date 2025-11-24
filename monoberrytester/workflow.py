@@ -311,13 +311,57 @@ class Workflow(QObject):
     @test_method(TestKeys.WAIT_FOR_UBOOT_SPL_PROMPT)
     def wait_for_uboot_spl(self, ctx):
         """Wait for u-boot prompt"""
-        self.__change_state(State.RUNNING, texts.STATUS_WAITING_FOR_UBOOT_SPL_PROMPT)
-        self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", lambda: self.done(ctx))
 
-    def done(self, ctx):
+        def success_callback():
+            ctx.succeed()
+            self.load_qspi_firmware_to_mem()
+
+        self.__change_state(State.RUNNING, texts.STATUS_WAITING_FOR_UBOOT_SPL_PROMPT)
+        self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", success_callback)
+
+    @test_method(TestKeys.LOAD_QSPI_FIRMWARE_TO_MEM)
+    def load_qspi_firmware_to_mem(self, ctx):
+        """Loading QSPI firware into memory"""
+        self.__change_state(State.RUNNING, texts.STATUS_LOADING_QSPI_FIRMWARE_TO_MEM)
+
+        def fail():
+            ctx.fail()
+            self.logger.info("Failed or timed out...") 
+
+        def start_usb():
+            self.logger.info("Starting USB")
+            self.serial_controller.send_and_expect("usb start\r\n", "Storage Device(s) found", load_firmware_to_mem)
+
+        def load_firmware_to_mem(result):
+            if result == False: fail(); return
+            self.logger.info("Loading QSPI firmware into memory")
+            self.serial_controller.send_and_expect("ext4load usb 0:0 0xC0000000 firmware-qspi.bin\r\n", "bytes read in", flash_probe)
+
+        def flash_probe(result):
+            if result == False: fail(); return
+            self.logger.info("Probing the flash")
+            self.serial_controller.send_and_expect("sf probe 0\r\n", "SF: Detected", flash_erase)
+
+        def flash_erase(result):
+            if result == False: fail(); return
+            self.logger.info("Erasing the flash")
+            self.serial_controller.send_and_expect("sf erase 0x0 0x2000000\r\n", "Erased: OK", flash_write, timeout_s=90)
+
+        def flash_write(result):
+            if result == False: fail(); return
+            self.logger.info("Writing QSPI firmware to flash")
+            self.serial_controller.send_and_expect("sf write 0xC0000000 0x0 ${filesize}\r\n", "Written: OK", flash_finished, timeout_s=90)
+
+        def flash_finished(result):
+            if result == False: fail(); return
+            ctx.succeed()
+            self.done()
+
+        start_usb()
+
+    def done(self):
         """Done, all tests have successfully passed and the board is
         fully functional (according to our knowledge)"""
-        ctx.succeed()
         self.__change_state(State.DONE, texts.STATUS_DONE)
         self.logger.info(texts.LOG_INFO_DONE)
 

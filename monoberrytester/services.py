@@ -13,7 +13,7 @@ import logging
 import requests
 
 from PyQt5.QtSerialPort import QSerialPort
-from PyQt5.QtCore import Qt, QObject, QProcess, pyqtSignal
+from PyQt5.QtCore import Qt, QObject, QProcess, pyqtSignal, QTimer
 
 import texts
 
@@ -214,6 +214,33 @@ class SerialController(QObject):
     def wait_for_and_send(self, wait_text, send_text, callback) -> bool:
         """Adds a text to wait for and text to send after in the waiting_list"""
         self.waiting_list.append((wait_text, callback, send_text))
+
+    def send_and_expect(self, send_text, expect_text, callback, timeout_s=10):
+        """Sends command to serial and waits for expected text with timeout."""
+
+        self.serial_service.send(send_text)
+
+        timer = QTimer()
+        timer.setSingleShot(True)
+
+        def handle_success():
+            timer.stop()
+            if wait_item in self.waiting_list:
+                self.waiting_list.remove(wait_item)
+            callback(True)
+
+        def handle_timeout():
+            if wait_item in self.waiting_list:
+                self.waiting_list.remove(wait_item)
+            callback(False)
+
+        wait_item = (expect_text, handle_success)
+        self.waiting_list.append(wait_item)
+
+        timer.timeout.connect(handle_timeout)
+        timer.start(timeout_s * 1000)
+
+        return True
 
     def __on_line_received(self, line):
         """Handler for when data is received via serial"""

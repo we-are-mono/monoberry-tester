@@ -103,7 +103,7 @@ class UI(QWidget):
         self.dm_qr_group.setLayout(self.dm_qr_group_layout)
 
         self.log_text_edit = QTextEdit()
-        self.log_text_edit.setDisabled(True)
+        self.log_text_edit.setReadOnly(True)
 
         self.start_btn = QPushButton(texts.UI_START_BTN_LABEL_START)
         self.start_btn.setMinimumHeight(64)
