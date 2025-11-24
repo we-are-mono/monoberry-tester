@@ -289,6 +289,11 @@ class Workflow(QObject):
                 self.logger.error(texts.LOG_PROCESS_EXITED_NON_0_CODE)
 
         def handle_exiting():
+            self.process_runner.output_received.disconnect(handle_process_output_received)
+            self.process_runner.error_received.disconnect(handle_process_error_received)
+            self.process_runner.process_errored.disconnect(handle_process_errored)
+            self.process_runner.process_finished.disconnect(handle_process_finished)
+
             self.process_runner.stop()
             ctx.succeed()
             self.wait_for_uboot()
