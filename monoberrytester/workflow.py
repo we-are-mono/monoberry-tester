@@ -116,6 +116,7 @@ class Workflow(QObject):
             self.serial.error_occurred.disconnect(handle_serial_error_occurred)
 
             self.logger.info(texts.LOG_INFO_UART_CONNECTED)
+            self.test_state_changed.emit(TestKeys.CONN_TO_UART, TestState.SUCCEEDED)
             self.scan_serial_num()
 
         def handle_serial_error_occurred(err_msg):
@@ -143,9 +144,9 @@ class Workflow(QObject):
 
             self.serial_num = code
             self.serial_scanned.emit(self.serial_num)
+            self.test_state_changed.emit(TestKeys.SCAN_SERIAL_NUM, TestState.SUCCEEDED)
             self.scan_qr_codes()
 
-        self.test_state_changed.emit(TestKeys.CONN_TO_UART, TestState.SUCCEEDED)
         self.current_test = TestKeys.SCAN_SERIAL_NUM
         self.__change_state(State.RUNNING, texts.STATUS_SCAN_SERIAL_NUM)
         self.test_state_changed.emit(TestKeys.SCAN_SERIAL_NUM, TestState.RUNNING)
@@ -166,6 +167,7 @@ class Workflow(QObject):
                 self.scanner.code_received.disconnect(handle_scanned_qr)
 
                 self.logger.info(f"{texts.LOG_INFO_SECOND_CODE_SCANNED} {code}")
+                self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.SUCCEEDED)
                 self.register_device_and_get_macs()
             else:
                 self.scanner.code_received.disconnect(handle_scanned_qr)
@@ -173,7 +175,6 @@ class Workflow(QObject):
                 self.logger.error(texts.LOG_ERROR_MORE_THAN_2_QR_SCANNED)
                 self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.FAILED)
 
-        self.test_state_changed.emit(TestKeys.SCAN_SERIAL_NUM, TestState.SUCCEEDED)
         self.current_test = TestKeys.SCAN_TWO_DM_QR_CODES
         self.__change_state(State.RUNNING, texts.STATUS_SCAN_QR_TOP)
         self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.RUNNING)
@@ -197,6 +198,7 @@ class Workflow(QObject):
                 r = response.split()
                 self.serial_num = r[0]
                 self.mac_addresses = r[1:]
+                self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.SUCCEEDED)
                 self.load_uboot_via_jtag()
             else:
                 self.logger.error(f"{texts.LOG_INFO_SERVER_ERROR} {response}")
@@ -213,7 +215,6 @@ class Workflow(QObject):
             self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.FAILED)
             self.__change_state(State.FAILED, f"{texts.CONN_TO_SERVER_FAILED} {err_msg}")
 
-        self.test_state_changed.emit(TestKeys.SCAN_TWO_DM_QR_CODES, TestState.SUCCEEDED)
         self.__change_state(State.RUNNING, texts.STATUS_REGISTER_DEVICE)
         self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.RUNNING)
 
@@ -251,9 +252,9 @@ class Workflow(QObject):
 
         def handle_exiting():
             self.process_runner.stop()
+            self.test_state_changed.emit(TestKeys.LOAD_UBOOT_VIA_JTAG, TestState.SUCCEEDED)
             self.wait_for_uboot()
 
-        self.test_state_changed.emit(TestKeys.REGISTER_DEVICE, TestState.SUCCEEDED)
         self.__change_state(State.RUNNING, texts.STATUS_LOADING_UBOOT_VIA_JTAG)
         self.test_state_changed.emit(TestKeys.LOAD_UBOOT_VIA_JTAG, TestState.RUNNING)
 
@@ -267,7 +268,6 @@ class Workflow(QObject):
 
     def wait_for_uboot(self):
         """Wait for u-boot prompt"""
-        self.test_state_changed.emit(TestKeys.LOAD_UBOOT_VIA_JTAG, TestState.SUCCEEDED)
         self.__change_state(State.RUNNING, texts.STATUS_WAITING_FOR_UBOOT_PROMPT)
         # self.serial_controller.wait_for("=>", self.done)
         # self.serial_controller.send("\r\n")
