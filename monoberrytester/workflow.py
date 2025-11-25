@@ -333,31 +333,56 @@ class Workflow(QObject):
             self.serial_controller.send_and_expect("usb start\r\n", "Storage Device(s) found", load_firmware_to_mem)
 
         def load_firmware_to_mem(result):
-            if result == False: fail(); return
+            if result is False: fail(); return
             self.logger.info("Loading QSPI firmware into memory")
             self.serial_controller.send_and_expect("ext4load usb 0:0 0xC0000000 firmware-qspi.bin\r\n", "bytes read in", flash_probe)
 
         def flash_probe(result):
-            if result == False: fail(); return
+            if result is False: fail(); return
             self.logger.info("Probing the flash")
             self.serial_controller.send_and_expect("sf probe 0\r\n", "SF: Detected", flash_erase)
 
         def flash_erase(result):
-            if result == False: fail(); return
+            if result is False: fail(); return
             self.logger.info("Erasing the flash")
             self.serial_controller.send_and_expect("sf erase 0x0 0x2000000\r\n", "Erased: OK", flash_write, timeout_s=90)
 
         def flash_write(result):
-            if result == False: fail(); return
+            if result is False: fail(); return
             self.logger.info("Writing QSPI firmware to flash")
             self.serial_controller.send_and_expect("sf write 0xC0000000 0x0 ${filesize}\r\n", "Written: OK", flash_finished, timeout_s=90)
 
         def flash_finished(result):
-            if result == False: fail(); return
+            if result is False: fail(); return
+            ctx.succeed()
+            self.wait_for_self_tests()
+
+        start_usb()
+
+    @test_method(TestKeys.WAIT_FOR_SELF_TESTS_PASS)
+    def wait_for_self_tests(self, ctx):
+        """Waits for self tests PASS output"""
+
+        def fail():
+            ctx.fail()
+            self.logger.info("Failed or timed out...")
+
+        def self_tests_check(result):
+            if result is False: fail(); return
+            ctx.succeed()
+            self.wait_for_uboot_prompt()
+
+        self.serial_controller.send_and_expect("reset\r\n", "On-board devices self test: PASS", self_tests_check, timeout_s=60)
+
+    @test_method(TestKeys.WAIT_FOR_UBOOT_PROMPT)
+    def wait_for_uboot_prompt(self, ctx):
+        """Wait for U-Boot prompt"""
+
+        def uboot_prompt_received():
             ctx.succeed()
             self.done()
 
-        start_usb()
+        self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", uboot_prompt_received)
 
     def done(self):
         """Done, all tests have successfully passed and the board is

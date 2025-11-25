@@ -287,9 +287,8 @@ class ProcessService(QObject):
             return
         self.is_stopping = True
         self.process.terminate()
-        # Wait up to 5 seconds for the process to finish
+
         if not self.process.waitForFinished(5000):
-            # If it doesn't finish gracefully, kill it
             self.process.kill()
             self.process.waitForFinished(1000)
 
@@ -302,12 +301,12 @@ class ProcessService(QObject):
     def __handle_stdout(self):
         """Handler for receiving data via stdout"""
         data = bytes(self.process.readAllStandardOutput())
-        self.output_received.emit(data.decode("utf-8"))
+        self.output_received.emit(data.decode("utf-8").strip())
 
     def __handle_stderr(self):
         """Handler for receiving data via stderr"""
         data = bytes(self.process.readAllStandardError())
-        self.error_received.emit(data.decode("utf-8"))
+        self.error_received.emit(data.decode("utf-8").strip())
 
     def __handle_finished(self, exit_code, exit_status):
         """Handler for when process finishes"""
