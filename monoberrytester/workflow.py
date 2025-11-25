@@ -4,6 +4,7 @@
 All 'business' logic
 """
 
+from datetime import datetime
 from enum import Enum, auto
 from functools import wraps
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
@@ -393,9 +394,32 @@ class Workflow(QObject):
                 self.logger.info("Failed or timed out...")
                 return
             ctx.succeed()
-            self.done()
+            self.set_time_in_uboot()
 
         self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", uboot_prompt_received, timeout_s=60)
+
+    @test_method(TestKeys.SET_TIME_IN_UBOOT)
+    def set_time_in_uboot(self, ctx):
+        """Set time in U-Boot"""
+
+        def prompt_received(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
+            self.serial_controller.send_and_expect("date " + t + "\r\n", "Date:", time_set, timeout_s=30)
+
+        def time_set(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
+            ctx.succeed()
+            self.done()
+
+        t = datetime.now().strftime("%m%d%H%M%y")
+        self.logger.info("Setting time to: " + t)
+        self.serial_controller.wait_for("=>", prompt_received)
 
     def done(self):
         """Done, all tests have successfully passed and the board is

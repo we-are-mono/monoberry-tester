@@ -12,9 +12,10 @@ class TestKeys(Enum):
     REGISTER_DEVICE =           "Register device and get MAC addresses from server"
     LOAD_UBOOT_SPL_VIA_JTAG =   "Load U-Boot SPL via JTAG"
     WAIT_FOR_UBOOT_SPL_PROMPT = "Receive U-Boot SPL prompt"
-    LOAD_QSPI_FIRMWARE_TO_MEM = "Loading QSPI firmware into memory"
-    WAIT_FOR_SELF_TESTS_PASS =  "Self tests PASS"
+    LOAD_QSPI_FIRMWARE_TO_MEM = "Load QSPI firmware into memory"
+    WAIT_FOR_SELF_TESTS_PASS =  "Pass self tests"
     WAIT_FOR_UBOOT_PROMPT =     "Receive U-Boot prompt"
+    SET_TIME_IN_UBOOT =         "Set time in U-Boot"
 
     @property
     def description(self):
