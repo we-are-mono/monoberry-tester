@@ -58,11 +58,7 @@ class LoggingService(QObject):
         logger.setLevel(logging.INFO)
 
 class ScannerService(QObject):
-    """Class that handles communication with the USB barcode scanner
-    
-    Attributes:
-        code_received (pyqtSignal): Signals when a code is scanned
-    """
+    """Class that handles communication with the USB barcode scanner"""
 
     code_received = pyqtSignal(str)
 
@@ -79,17 +75,7 @@ class ScannerService(QObject):
             self.buffer += text
 
 class ServerClient(QObject):
-    # pylint: disable=line-too-long
-    """HTTP Client to call our server
-
-    Args:
-        server_endpoint (str): URL base for our server endpoint
-        logging_service (LoggingService): Service for logging
-    
-    Server one liner for testing locally:
-        ncat -lk 8000 -c 'sleep 1; echo "HTTP/1.1 200 OK\r\n\r\nS3R14LNUM83R\n02:00:00:00:00:01\n02:00:00:00:00:02\n02:00:00:00:00:03\n02:00:00:00:00:04\n02:00:00:00:00:05"'
-    """
-    # pylint: enable=line-too-long
+    """HTTP Client to call our server"""
 
     response_received = pyqtSignal(bool, str)
     error_occured = pyqtSignal(str)
@@ -107,9 +93,7 @@ class ServerClient(QObject):
         self.request_params = {}
 
     def set_params(self, serial, codes):
-        """
-        Sets scanned QR data matrix codes (do this before calling `run` method)
-        """
+        """Sets scanned QR data matrix codes (do this before calling `run` method)"""
         self.serial = serial
         self.qr1 = codes[0]
         self.qr2 = codes[1]
@@ -192,7 +176,44 @@ class SerialService(QObject):
 
         self.serial_port.close()
 
-class SerialController(QObject):
+class BaseController(QObject):
+    """Base controller with shared timeout logic for waiting operations"""
+
+    def __init__(self):
+        super().__init__()
+        self.waiting_list = []
+        self.timer_map = {}
+
+    def _add_to_waiting_list_with_timeout(self, wait_item, success_callback, timeout_s=None):
+        """Adds item to waiting list with optional timeout handling."""
+        if timeout_s is not None:
+            timer = QTimer()
+            timer.setSingleShot(True)
+
+            def handle_timeout():
+                if wait_item in self.waiting_list:
+                    self.waiting_list.remove(wait_item)
+                if wait_item in self.timer_map:
+                    del self.timer_map[wait_item]
+                success_callback(False)
+
+            timer.timeout.connect(handle_timeout)
+            timer.start(timeout_s * 1000)
+            self.timer_map[wait_item] = timer
+
+        self.waiting_list.append(wait_item)
+
+    def _remove_from_waiting_list_and_stop_timer(self, wait_item):
+        """Removes item from waiting list and stops associated timer if present."""
+        if wait_item in self.timer_map:
+            timer = self.timer_map[wait_item]
+            timer.stop()
+            del self.timer_map[wait_item]
+
+        if wait_item in self.waiting_list:
+            self.waiting_list.remove(wait_item)
+
+class SerialController(BaseController):
     """Serial controller to make working with UART easier"""
 
     def __init__(self, serial_service: SerialService):
@@ -201,50 +222,33 @@ class SerialController(QObject):
         self.serial_service.line_received.connect(self.__on_line_received)
         self.wait_text = None
         self.callback = None
-        self.waiting_list = []
 
-    def wait_for(self, wait_text, callback) -> bool:
-        """Adds a text to wait for in the waiting_list"""
-        self.waiting_list.append((wait_text, callback))
+    def wait_for(self, wait_text, callback, timeout_s=None) -> bool:
+        """Adds a text to wait for in the waiting_list."""
+        wait_item = (wait_text, callback)
+        self._add_to_waiting_list_with_timeout(wait_item, callback, timeout_s)
 
     def send(self, send_text) -> bool:
         """Sends the text to serial"""
         self.serial_service.send(send_text)
 
-    def wait_for_and_send(self, wait_text, send_text, callback) -> bool:
-        """Adds a text to wait for and text to send after in the waiting_list"""
-        self.waiting_list.append((wait_text, callback, send_text))
+    def wait_for_and_send(self, wait_text, send_text, callback, timeout_s=None) -> bool:
+        """Adds a text to wait for and text to send after in the waiting_list."""
+        wait_item = (wait_text, callback, send_text)
+        self._add_to_waiting_list_with_timeout(wait_item, callback, timeout_s)
 
     def send_and_expect(self, send_text, expect_text, callback, timeout_s=10):
         """Sends command to serial and waits for expected text with timeout."""
-
         self.serial_service.send(send_text)
 
-        timer = QTimer()
-        timer.setSingleShot(True)
-
-        def handle_success():
-            timer.stop()
-            if wait_item in self.waiting_list:
-                self.waiting_list.remove(wait_item)
-            callback(True)
-
-        def handle_timeout():
-            if wait_item in self.waiting_list:
-                self.waiting_list.remove(wait_item)
-            callback(False)
-
-        wait_item = (expect_text, handle_success)
-        self.waiting_list.append(wait_item)
-
-        timer.timeout.connect(handle_timeout)
-        timer.start(timeout_s * 1000)
+        wait_item = (expect_text, callback)
+        self._add_to_waiting_list_with_timeout(wait_item, callback, timeout_s)
 
         return True
 
     def __on_line_received(self, line):
         """Handler for when data is received via serial"""
-        for wait_item in self.waiting_list:
+        for wait_item in self.waiting_list[:]:  # Iterate over copy to allow safe removal
             wait_text, callback, send_text = None, None, None
             if len(wait_item) == 2:
                 wait_text, callback = wait_item
@@ -252,13 +256,19 @@ class SerialController(QObject):
                 wait_text, callback, send_text = wait_item
 
             if wait_text in line:
-                self.waiting_list.remove(wait_item)
+                self._remove_from_waiting_list_and_stop_timer(wait_item)
                 if send_text:
                     self.serial_service.send(send_text)
-                callback()
+
+                # Call callback with True if it expects a parameter (timeout case), else call without params
+                try:
+                    callback(True)
+                except TypeError:
+                    callback()
 
 class ProcessService(QObject):
     """Service for running, reading from and writing to processes"""
+
     output_received = pyqtSignal(str)
     error_received = pyqtSignal(str)
     process_finished = pyqtSignal(int)
@@ -332,26 +342,27 @@ class ProcessService(QObject):
         self.logger.info(f"ProcessService: {self.process.program()} {' '.join(self.process.arguments())} error occured: {err_str}")
         self.process_errored.emit(err_str)
 
-class ProcessController(QObject):
+class ProcessController(BaseController):
     """Process controller to make working with processes easier"""
 
     def __init__(self, process_service: ProcessService):
         super().__init__()
         self.process_service = process_service
         self.process_service.output_received.connect(self.__on_output_received)
-        self.waiting_list = []
 
-    def wait_for(self, wait_text, callback):
-        """Adds a text to wait for in the waiting_list"""
-        self.waiting_list.append((wait_text, callback))
+    def wait_for(self, wait_text, callback, timeout_s=None):
+        """Adds a text to wait for in the waiting_list."""
+        wait_item = (wait_text, callback)
+        self._add_to_waiting_list_with_timeout(wait_item, callback, timeout_s)
 
-    def wait_for_and_send(self, wait_text, send_text, callback):
-        """Adds a text to wait for and text to send after in the waiting_list"""
-        self.waiting_list.append((wait_text, callback, send_text))
+    def wait_for_and_send(self, wait_text, send_text, callback, timeout_s=None):
+        """Adds a text to wait for and text to send after in the waiting_list."""
+        wait_item = (wait_text, callback, send_text)
+        self._add_to_waiting_list_with_timeout(wait_item, callback, timeout_s)
 
     def __on_output_received(self, output):
         """Handler for when output is received from process"""
-        for wait_item in self.waiting_list:
+        for wait_item in self.waiting_list[:]:  # Iterate over copy to allow safe removal
             wait_text, callback, send_text = None, None, None
             if len(wait_item) == 2:
                 wait_text, callback = wait_item
@@ -359,7 +370,12 @@ class ProcessController(QObject):
                 wait_text, callback, send_text = wait_item
 
             if wait_text in output:
-                self.waiting_list.remove(wait_item)
+                self._remove_from_waiting_list_and_stop_timer(wait_item)
                 if send_text:
                     self.process_service.write_to_process(send_text)
-                callback()
+
+                # Call callback with True if it expects a parameter (timeout case), else call without params
+                try:
+                    callback(True)
+                except TypeError:
+                    callback()
