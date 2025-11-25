@@ -184,7 +184,7 @@ class BaseController(QObject):
         self.waiting_list = []
         self.timer_map = {}
 
-    def _add_to_waiting_list_with_timeout(self, wait_item, success_callback, timeout_s=None):
+    def _add_to_waiting_list_with_timeout(self, wait_item, callback, timeout_s=None):
         """Adds item to waiting list with optional timeout handling."""
         if timeout_s is not None:
             timer = QTimer()
@@ -195,7 +195,7 @@ class BaseController(QObject):
                     self.waiting_list.remove(wait_item)
                 if wait_item in self.timer_map:
                     del self.timer_map[wait_item]
-                success_callback(False)
+                callback(False)
 
             timer.timeout.connect(handle_timeout)
             timer.start(timeout_s * 1000)
@@ -260,11 +260,7 @@ class SerialController(BaseController):
                 if send_text:
                     self.serial_service.send(send_text)
 
-                # Call callback with True if it expects a parameter (timeout case), else call without params
-                try:
-                    callback(True)
-                except TypeError:
-                    callback()
+                callback(True)
 
 class ProcessService(QObject):
     """Service for running, reading from and writing to processes"""
@@ -374,8 +370,4 @@ class ProcessController(BaseController):
                 if send_text:
                     self.process_service.write_to_process(send_text)
 
-                # Call callback with True if it expects a parameter (timeout case), else call without params
-                try:
-                    callback(True)
-                except TypeError:
-                    callback()
+                callback(True)

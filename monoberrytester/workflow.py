@@ -251,7 +251,7 @@ class Workflow(QObject):
             self.server_thread.wait()
 
             ctx.fail()
-            self.__change_state(State.FAILED, f"{texts.CONN_TO_SERVER_FAILED} {err_msg}")
+            self.__change_state(State.FAILED, f"{texts.CONN_TO_SERVER_FAILED}")
 
         self.__change_state(State.RUNNING, texts.STATUS_REGISTER_DEVICE)
 
@@ -288,7 +288,12 @@ class Workflow(QObject):
             else:
                 self.logger.error(texts.LOG_PROCESS_EXITED_NON_0_CODE)
 
-        def handle_exiting():
+        def handle_exiting(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out waiting for lsbp.tcl to exit...")
+                return
+
             self.process_runner.output_received.disconnect(handle_process_output_received)
             self.process_runner.error_received.disconnect(handle_process_error_received)
             self.process_runner.process_errored.disconnect(handle_process_errored)
@@ -305,19 +310,23 @@ class Workflow(QObject):
         self.process_runner.process_errored.connect(handle_process_errored)
         self.process_runner.process_finished.connect(handle_process_finished)
 
-        self.process_controller.wait_for("lsbp.tcl is exiting...", handle_exiting)
+        self.process_controller.wait_for("lsbp.tcl is exiting...", handle_exiting, timeout_s=180)
         self.process_runner.start("/home/rdme/CCS/bin/ccs", ["-nogfx", "-console", "-file", "/home/rdme/TAP/lsbp.tcl"])
 
     @test_method(TestKeys.WAIT_FOR_UBOOT_SPL_PROMPT)
     def wait_for_uboot_spl(self, ctx):
         """Wait for u-boot prompt"""
 
-        def success_callback():
+        def callback(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
             ctx.succeed()
             self.load_qspi_firmware_to_mem()
 
         self.__change_state(State.RUNNING, texts.STATUS_WAITING_FOR_UBOOT_SPL_PROMPT)
-        self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", success_callback)
+        self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", callback, timeout_s=10)
 
     @test_method(TestKeys.LOAD_QSPI_FIRMWARE_TO_MEM)
     def load_qspi_firmware_to_mem(self, ctx):
@@ -326,21 +335,21 @@ class Workflow(QObject):
 
         def fail():
             ctx.fail()
-            self.logger.info("Failed or timed out...") 
+            self.logger.info("Failed or timed out...")
 
         def start_usb():
             self.logger.info("Starting USB")
-            self.serial_controller.send_and_expect("usb start\r\n", "Storage Device(s) found", load_firmware_to_mem)
+            self.serial_controller.send_and_expect("usb start\r\n", "Storage Device(s) found", load_firmware_to_mem, timeout_s=10)
 
         def load_firmware_to_mem(result):
             if result is False: fail(); return
             self.logger.info("Loading QSPI firmware into memory")
-            self.serial_controller.send_and_expect("ext4load usb 0:0 0xC0000000 firmware-qspi.bin\r\n", "bytes read in", flash_probe)
+            self.serial_controller.send_and_expect("ext4load usb 0:0 0xC0000000 firmware-qspi.bin\r\n", "bytes read in", flash_probe, timeout_s=30)
 
         def flash_probe(result):
             if result is False: fail(); return
             self.logger.info("Probing the flash")
-            self.serial_controller.send_and_expect("sf probe 0\r\n", "SF: Detected", flash_erase)
+            self.serial_controller.send_and_expect("sf probe 0\r\n", "SF: Detected", flash_erase, timeout_s=10)
 
         def flash_erase(result):
             if result is False: fail(); return
@@ -378,11 +387,15 @@ class Workflow(QObject):
     def wait_for_uboot_prompt(self, ctx):
         """Wait for U-Boot prompt"""
 
-        def uboot_prompt_received():
+        def uboot_prompt_received(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
             ctx.succeed()
             self.done()
 
-        self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", uboot_prompt_received)
+        self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", uboot_prompt_received, timeout_s=60)
 
     def done(self):
         """Done, all tests have successfully passed and the board is
