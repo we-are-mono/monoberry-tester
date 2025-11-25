@@ -345,12 +345,12 @@ class Workflow(QObject):
         def flash_erase(result):
             if result is False: fail(); return
             self.logger.info("Erasing the flash")
-            self.serial_controller.send_and_expect("sf erase 0x0 0x2000000\r\n", "Erased: OK", flash_write, timeout_s=90)
+            self.serial_controller.send_and_expect("sf erase 0x0 0x2000000\r\n", "Erased: OK", flash_write, timeout_s=120)
 
         def flash_write(result):
             if result is False: fail(); return
             self.logger.info("Writing QSPI firmware to flash")
-            self.serial_controller.send_and_expect("sf write 0xC0000000 0x0 ${filesize}\r\n", "Written: OK", flash_finished, timeout_s=90)
+            self.serial_controller.send_and_expect("sf write 0xC0000000 0x0 ${filesize}\r\n", "Written: OK", flash_finished, timeout_s=120)
 
         def flash_finished(result):
             if result is False: fail(); return

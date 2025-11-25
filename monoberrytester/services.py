@@ -232,7 +232,7 @@ class SerialController(BaseController):
         """Sends the text to serial"""
         self.serial_service.send(send_text)
 
-    def wait_for_and_send(self, wait_text, send_text, callback, timeout_s=None) -> bool:
+    def wait_for_and_send(self, wait_text, send_text, callback, timeout_s=10) -> bool:
         """Adds a text to wait for and text to send after in the waiting_list."""
         wait_item = (wait_text, callback, send_text)
         self._add_to_waiting_list_with_timeout(wait_item, callback, timeout_s)
