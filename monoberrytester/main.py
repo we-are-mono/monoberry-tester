@@ -39,7 +39,7 @@ class Main(QMainWindow):
         # Init UI
         self.ui = UI(TestKeys)
         self.setCentralWidget(self.ui)
-        self.resize(1280, 720)
+        self.resize(1920, 1080)
 
         # Init services
         self.logger             = LoggingService()

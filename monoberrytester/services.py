@@ -170,8 +170,8 @@ class SerialService(QObject):
                     self.line_received.emit(str(line))
 
             while not self.write_queue.empty():
-                data = self.write_queue.get()
-                self.serial_port.write(data.encode('utf-8'))
+                data = self.write_queue.get().encode('utf-8')
+                self.serial_port.write(data)
                 self.serial_port.flush()
 
         self.serial_port.close()

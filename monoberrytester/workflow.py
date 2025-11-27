@@ -4,6 +4,7 @@
 All 'business' logic
 """
 
+import json
 from datetime import datetime
 from enum import Enum, auto
 from functools import wraps
@@ -128,6 +129,7 @@ class Workflow(QObject):
         self.current_test = None
         self.scanned_codes = []
         self.mac_addresses = []
+        self.mac_addr_hex_strings = []
         self.serial_num = None
         self.logger.reinit()
         self.serial.stop()
@@ -224,6 +226,9 @@ class Workflow(QObject):
         """Connect to our server to register device and get MAC addresses
         based on the serial and provided data matrix QR codes"""
 
+        def int_to_mac_hex(num):
+            return ":".join(f"{b:02x}" for b in num.to_bytes(6, 'big'))
+
         def handle_server_response(success: bool, response: str):
             """Called upon receiving a response from the server"""
             self.server_client.response_received.disconnect(handle_server_response)
@@ -234,9 +239,9 @@ class Workflow(QObject):
 
             if success:
                 self.logger.info(f"{texts.LOG_INFO_SERVER_RESPONSE} {response}")
-                r = response.split()
-                self.serial_num = r[0]
-                self.mac_addresses = r[1:]
+                r = json.loads(response)
+                mac_ints = [m['addr'] for m in r["macs"]]
+                self.mac_addr_hex_strings = list(map(int_to_mac_hex, mac_ints))
                 ctx.succeed()
                 self.load_uboot_spl_via_jtag()
             else:
@@ -365,28 +370,20 @@ class Workflow(QObject):
         def flash_finished(result):
             if result is False: fail(); return
             ctx.succeed()
-            self.wait_for_self_tests()
-
-        start_usb()
-
-    @test_method(TestKeys.WAIT_FOR_SELF_TESTS_PASS)
-    def wait_for_self_tests(self, ctx):
-        """Waits for self tests PASS output"""
-
-        def fail():
-            ctx.fail()
-            self.logger.info("Failed or timed out...")
-
-        def self_tests_check(result):
-            if result is False: fail(); return
-            ctx.succeed()
             self.wait_for_uboot_prompt()
 
-        self.serial_controller.send_and_expect("reset\r\n", "On-board devices self test: PASS", self_tests_check, timeout_s=60)
+        start_usb()
 
     @test_method(TestKeys.WAIT_FOR_UBOOT_PROMPT)
     def wait_for_uboot_prompt(self, ctx):
         """Wait for U-Boot prompt"""
+
+        def after_reset(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
+            self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", uboot_prompt_received, timeout_s=60)
 
         def uboot_prompt_received(result):
             if result is False:
@@ -396,7 +393,7 @@ class Workflow(QObject):
             ctx.succeed()
             self.set_time_in_uboot()
 
-        self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", uboot_prompt_received, timeout_s=60)
+        self.serial_controller.send_and_expect("reset\r\n", "On-board devices self test: FAIL", after_reset, timeout_s=60)
 
     @test_method(TestKeys.SET_TIME_IN_UBOOT)
     def set_time_in_uboot(self, ctx):
@@ -415,11 +412,63 @@ class Workflow(QObject):
                 self.logger.info("Failed or timed out...")
                 return
             ctx.succeed()
-            self.done()
+            self.program_eeprom()
 
         t = datetime.now().strftime("%m%d%H%M%y")
         self.logger.info("Setting time to: " + t)
         self.serial_controller.wait_for("=>", prompt_received)
+
+    @test_method(TestKeys.PROGRAM_EEPROM)
+    def program_eeprom(self, ctx):
+        """Program EEPROM with serial number and MACs"""
+        def prompt_received(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
+            self.serial_controller.send_and_expect("mw 2320000 80000080; mw 2320008 40098033; i2c dev 3\r\n", "Setting bus to 3", bus_set)
+
+        def bus_set(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
+            self.serial_controller.send_and_expect("i2c mw 0x50 0x0000.2 0x00\r\n", "=>", eeprom_erased)
+
+        def eeprom_erased(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
+            self.serial_controller.send_and_expect(
+                f'program_eeprom "Mono Gateway Development Kit" "{self.serial_num}" {self.mac_addr_hex_strings[0]}\r\n',
+                "EEPROM programming successful!",
+                eeprom_programmed)
+
+        def eeprom_programmed(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
+            ctx.succeed()
+            self.wait_for_self_tests()
+
+        self.serial_controller.wait_for("=>", prompt_received)
+
+    @test_method(TestKeys.WAIT_FOR_SELF_TESTS_PASS)
+    def wait_for_self_tests(self, ctx):
+        """Waits for self tests PASS output"""
+
+        def fail():
+            ctx.fail()
+            self.logger.info("Failed or timed out...")
+
+        def self_tests_check(result):
+            if result is False: fail(); return
+            ctx.succeed()
+            self.done()
+
+        self.serial_controller.send_and_expect("reset\r\n", "On-board devices self test: PASS", self_tests_check, timeout_s=60)
 
     def done(self):
         """Done, all tests have successfully passed and the board is
