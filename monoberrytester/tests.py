@@ -17,6 +17,8 @@ class TestKeys(Enum):
     SET_TIME_IN_UBOOT =         "Set time in U-Boot"
     PROGRAM_EEPROM =            "Program EEPROM with serial number and MACs"
     WAIT_FOR_SELF_TESTS_PASS =  "Pass self tests"
+    BOOT_TO_RECOVERY_LINUX =    "Boot to recovery Linux"
+    PARTITION_EMMC =            "Partition eMMC"
 
     @property
     def description(self):

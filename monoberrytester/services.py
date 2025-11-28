@@ -163,11 +163,24 @@ class SerialService(QObject):
         self.is_running = True
         self.connected.emit()
 
+        buffer = ""
+        idle_cycles = 0
+
         while self.is_running:
             if self.serial_port.waitForReadyRead(10):
-                line = bytes(self.serial_port.readAll()).decode('utf-8', errors='ignore').strip()
-                if line:
-                    self.line_received.emit(str(line))
+                idle_cycles = 0
+                buffer += bytes(self.serial_port.readAll()).decode('utf-8', errors='ignore')
+
+                while '\n' in buffer:
+                    line, buffer = buffer.split('\n', 1)
+                    line = line.strip()
+                    if line:
+                        self.line_received.emit(line)
+            else:
+                idle_cycles += 1
+                if buffer.strip() and idle_cycles >= 10:
+                    self.line_received.emit(buffer.strip())
+                    buffer = ""
 
             while not self.write_queue.empty():
                 data = self.write_queue.get().encode('utf-8')

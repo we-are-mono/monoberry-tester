@@ -159,7 +159,8 @@ class Workflow(QObject):
 
             self.logger.info(texts.LOG_INFO_UART_CONNECTED)
             ctx.succeed()
-            self.scan_serial_num()
+            # self.scan_serial_num()
+            self.wait_for_self_tests()
 
         def handle_serial_error_occurred(err_msg):
             """Called on failed serial connection"""
@@ -459,16 +460,55 @@ class Workflow(QObject):
     def wait_for_self_tests(self, ctx):
         """Waits for self tests PASS output"""
 
-        def fail():
-            ctx.fail()
-            self.logger.info("Failed or timed out...")
-
         def self_tests_check(result):
-            if result is False: fail(); return
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
+            ctx.succeed()
+            self.boot_to_recovery_linux()
+
+        self.serial_controller.send_and_expect("reset\r\n", "On-board devices self test: PASS", self_tests_check, timeout_s=60)
+
+    @test_method(TestKeys.BOOT_TO_RECOVERY_LINUX)
+    def boot_to_recovery_linux(self, ctx):
+        def booting_done(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
+            ctx.succeed()
+            self.partition_emmc()
+
+        self.serial_controller.wait_for_and_send("recovery login:", "root\r\n", booting_done, timeout_s=60)
+
+    @test_method(TestKeys.PARTITION_EMMC)
+    def partition_emmc(self, ctx):
+        def partitioning_done(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
+            cmd = "mkfs.ext4 /dev/mmcblk0p1 -F\r\n"
+            self.serial_controller.send_and_expect(cmd, "Writing superblocks and filesystem accounting information", wait_for_done, timeout_s=120)
+
+        def wait_for_done(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
+            self.serial_controller.wait_for("done", filesystem_done)
+
+        def filesystem_done(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
             ctx.succeed()
             self.done()
 
-        self.serial_controller.send_and_expect("reset\r\n", "On-board devices self test: PASS", self_tests_check, timeout_s=60)
+        cmd = "parted /dev/mmcblk0 mklabel gpt -s && parted /dev/mmcblk0 mkpart primary ext4 32MiB 100% -s\r\n"
+        self.serial_controller.send_and_expect(cmd, "root@recovery:~#", partitioning_done)
 
     def done(self):
         """Done, all tests have successfully passed and the board is
