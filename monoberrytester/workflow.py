@@ -393,7 +393,7 @@ class Workflow(QObject):
             ctx.succeed()
             self.set_time_in_uboot()
 
-        self.serial_controller.send_and_expect("reset\r\n", "On-board devices self test: FAIL", after_reset, timeout_s=60)
+        self.serial_controller.send_and_expect("reset\r\n", "Model: Mono Gateway Development Kit", after_reset, timeout_s=60)
 
     @test_method(TestKeys.SET_TIME_IN_UBOOT)
     def set_time_in_uboot(self, ctx):
