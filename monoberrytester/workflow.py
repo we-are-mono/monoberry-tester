@@ -505,10 +505,23 @@ class Workflow(QObject):
                 self.logger.info("Failed or timed out...")
                 return
             ctx.succeed()
-            self.done()
+            self.mount_usb_drive()
 
         cmd = "parted /dev/mmcblk0 mklabel gpt -s && parted /dev/mmcblk0 mkpart primary ext4 32MiB 100% -s\r\n"
         self.serial_controller.send_and_expect(cmd, "root@recovery:~#", partitioning_done)
+
+    @test_method(TestKeys.MOUNT_USB_DRIVE)
+    def mount_usb_drive(self, ctx):
+        def mounting_done(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
+            ctx.succeed()
+            self.done()
+
+        cmd = "mkdir -p /mnt/usb && (mountpoint -q /mnt/usb || mount -t ext4 /dev/sda /mnt/usb) && ls /mnt/usb\r\n"
+        self.serial_controller.send_and_expect(cmd, "firmware-emmc.bin  firmware-qspi.bin", mounting_done)
 
     def done(self):
         """Done, all tests have successfully passed and the board is

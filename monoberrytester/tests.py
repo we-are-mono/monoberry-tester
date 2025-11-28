@@ -19,6 +19,7 @@ class TestKeys(Enum):
     WAIT_FOR_SELF_TESTS_PASS =  "Pass self tests"
     BOOT_TO_RECOVERY_LINUX =    "Boot to recovery Linux"
     PARTITION_EMMC =            "Partition eMMC"
+    MOUNT_USB_DRIVE =           "Mount USB drive"
 
     @property
     def description(self):
