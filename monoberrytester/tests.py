@@ -20,6 +20,8 @@ class TestKeys(Enum):
     BOOT_TO_RECOVERY_LINUX =    "Boot to recovery Linux"
     PARTITION_EMMC =            "Partition eMMC"
     MOUNT_USB_DRIVE =           "Mount USB drive"
+    WRITE_IMAGE_TO_EMMC =       "Write image to eMMC"
+    BOOT_TO_OPENWRT =           "Boot to OpenWRT"
 
     @property
     def description(self):

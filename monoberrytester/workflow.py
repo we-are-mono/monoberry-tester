@@ -4,6 +4,7 @@
 All 'business' logic
 """
 
+import time
 import json
 from datetime import datetime
 from enum import Enum, auto
@@ -159,8 +160,7 @@ class Workflow(QObject):
 
             self.logger.info(texts.LOG_INFO_UART_CONNECTED)
             ctx.succeed()
-            # self.scan_serial_num()
-            self.wait_for_self_tests()
+            self.scan_serial_num()
 
         def handle_serial_error_occurred(err_msg):
             """Called on failed serial connection"""
@@ -330,14 +330,14 @@ class Workflow(QObject):
                 self.logger.info("Failed or timed out...")
                 return
             ctx.succeed()
-            self.load_qspi_firmware_to_mem()
+            self.write_firmware_to_flash()
 
         self.__change_state(State.RUNNING, texts.STATUS_WAITING_FOR_UBOOT_SPL_PROMPT)
         self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", callback, timeout_s=10)
 
     @test_method(TestKeys.LOAD_QSPI_FIRMWARE_TO_MEM)
-    def load_qspi_firmware_to_mem(self, ctx):
-        """Loading QSPI firware into memory"""
+    def write_firmware_to_flash(self, ctx):
+        """Write firware to flash"""
         self.__change_state(State.RUNNING, texts.STATUS_LOADING_QSPI_FIRMWARE_TO_MEM)
 
         def fail():
@@ -472,6 +472,20 @@ class Workflow(QObject):
 
     @test_method(TestKeys.BOOT_TO_RECOVERY_LINUX)
     def boot_to_recovery_linux(self, ctx):
+        def autoboot_stopped(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
+            self.serial_controller.wait_for_and_send("=>", "run recovery\r\n", do_login, timeout_s=60)
+
+        def do_login(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
+            self.serial_controller.wait_for_and_send("recovery login:", "root\r\n", booting_done, timeout_s=60)
+
         def booting_done(result):
             if result is False:
                 ctx.fail()
@@ -480,7 +494,8 @@ class Workflow(QObject):
             ctx.succeed()
             self.partition_emmc()
 
-        self.serial_controller.wait_for_and_send("recovery login:", "root\r\n", booting_done, timeout_s=60)
+        self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", autoboot_stopped, timeout_s=60)
+        
 
     @test_method(TestKeys.PARTITION_EMMC)
     def partition_emmc(self, ctx):
@@ -518,10 +533,50 @@ class Workflow(QObject):
                 self.logger.info("Failed or timed out...")
                 return
             ctx.succeed()
-            self.done()
+            self.write_image_to_emmc()
 
         cmd = "mkdir -p /mnt/usb && (mountpoint -q /mnt/usb || mount -t ext4 /dev/sda /mnt/usb) && ls /mnt/usb\r\n"
-        self.serial_controller.send_and_expect(cmd, "firmware-emmc.bin  firmware-qspi.bin", mounting_done)
+        self.serial_controller.send_and_expect(cmd, "firmware-qspi.bin", mounting_done)
+
+    @test_method(TestKeys.WRITE_IMAGE_TO_EMMC)
+    def write_image_to_emmc(self, ctx):
+        def dd_done(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
+            self.serial_controller.send_and_expect("echo $?\r\n", "0", dd_successful)
+
+        def dd_successful(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
+            ctx.succeed()
+            self.boot_to_openwrt()
+
+        cmd = "dd if=/mnt/usb/openwrt.ext4 of=/dev/mmcblk0p1 bs=4M\r\n"
+        self.serial_controller.send_and_expect(cmd, "root@recovery:~#", dd_done)
+
+    @test_method(TestKeys.BOOT_TO_OPENWRT)
+    def boot_to_openwrt(self, ctx):
+        def openwrt_ready(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
+            time.sleep(2)
+            self.serial_controller.send_and_expect("\r\n", "root@OpenWrt:~#", openwrt_prompt_received)
+
+        def openwrt_prompt_received(result):
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
+            ctx.succeed()
+            self.done()
+
+        self.serial_controller.send_and_expect("reboot\r\n", "kmodloader: done loading kernel modules from /etc/modules.d/*", openwrt_ready, timeout_s=60)
 
     def done(self):
         """Done, all tests have successfully passed and the board is
