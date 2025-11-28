@@ -143,10 +143,10 @@ class SerialService(QObject):
         """Stop serial service"""
         self.is_running = False
 
-    def send(self, data: str):
+    def send(self, data: str, slow=False):
         """Send data via serial (writes to queue then the run loop sends it from queue)"""
         if self.serial_port.isOpen():
-            self.write_queue.put(data)
+            self.write_queue.put((data, slow))
         else:
             self.error_occurred.emit(texts.LOG_ERROR_UART_WRITE_NOT_OPEN)
 
@@ -183,9 +183,17 @@ class SerialService(QObject):
                     buffer = ""
 
             while not self.write_queue.empty():
-                data = self.write_queue.get().encode('utf-8')
-                self.serial_port.write(data)
-                self.serial_port.flush()
+                data, slow = self.write_queue.get()
+                data_bytes = data.encode('utf-8')
+
+                if slow:
+                    for char_byte in data_bytes:
+                        self.serial_port.write(bytes([char_byte]))
+                        self.serial_port.flush()
+                        self.serial_port.waitForBytesWritten(100)
+                else:
+                    bytes_written = self.serial_port.write(data_bytes)
+                    self.serial_port.flush()
 
         self.serial_port.close()
 
@@ -250,9 +258,9 @@ class SerialController(BaseController):
         wait_item = (wait_text, callback, send_text)
         self._add_to_waiting_list_with_timeout(wait_item, callback, timeout_s)
 
-    def send_and_expect(self, send_text, expect_text, callback, timeout_s=10):
+    def send_and_expect(self, send_text, expect_text, callback, timeout_s=10, slow=False):
         """Sends command to serial and waits for expected text with timeout."""
-        self.serial_service.send(send_text)
+        self.serial_service.send(send_text, slow=slow)
 
         wait_item = (expect_text, callback)
         self._add_to_waiting_list_with_timeout(wait_item, callback, timeout_s)

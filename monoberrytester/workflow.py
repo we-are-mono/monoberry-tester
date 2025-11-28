@@ -427,6 +427,7 @@ class Workflow(QObject):
                 ctx.fail()
                 self.logger.info("Failed or timed out...")
                 return
+            time.sleep(1)
             self.serial_controller.send_and_expect("mw 2320000 80000080; mw 2320008 40098033; i2c dev 3\r\n", "Setting bus to 3", bus_set)
 
         def bus_set(result):
@@ -442,9 +443,10 @@ class Workflow(QObject):
                 self.logger.info("Failed or timed out...")
                 return
             self.serial_controller.send_and_expect(
-                f'program_eeprom "Mono Gateway Development Kit" "{self.serial_num}" {self.mac_addr_hex_strings[0]}\r\n',
+                f"program_eeprom \"Mono Gateway Development Kit\" \"{self.serial_num}\" {self.mac_addr_hex_strings[0]}\r\n",
                 "EEPROM programming successful!",
-                eeprom_programmed)
+                eeprom_programmed,
+                slow=True)
 
         def eeprom_programmed(result):
             if result is False:
