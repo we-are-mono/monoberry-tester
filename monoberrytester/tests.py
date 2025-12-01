@@ -12,7 +12,7 @@ class TestKeys(Enum):
     REGISTER_DEVICE =           "Register device and get MAC addresses from server"
     LOAD_UBOOT_SPL_VIA_JTAG =   "Load U-Boot SPL via JTAG"
     WAIT_FOR_UBOOT_SPL_PROMPT = "Receive U-Boot SPL prompt"
-    LOAD_QSPI_FIRMWARE_TO_MEM = "Load QSPI firmware into memory"
+    WRITE_FIRMWARE_TO_FLASH = "Load QSPI firmware into memory"
     WAIT_FOR_UBOOT_PROMPT =     "Receive U-Boot prompt"
     SET_TIME_IN_UBOOT =         "Set time in U-Boot"
     PROGRAM_EEPROM =            "Program EEPROM with serial number and MACs"

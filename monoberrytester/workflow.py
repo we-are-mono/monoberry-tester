@@ -335,7 +335,7 @@ class Workflow(QObject):
         self.__change_state(State.RUNNING, texts.STATUS_WAITING_FOR_UBOOT_SPL_PROMPT)
         self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", callback, timeout_s=10)
 
-    @test_method(TestKeys.LOAD_QSPI_FIRMWARE_TO_MEM)
+    @test_method(TestKeys.WRITE_FIRMWARE_TO_FLASH)
     def write_firmware_to_flash(self, ctx):
         """Write firware to flash"""
         self.__change_state(State.RUNNING, texts.STATUS_LOADING_QSPI_FIRMWARE_TO_MEM)
