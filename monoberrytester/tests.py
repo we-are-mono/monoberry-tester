@@ -6,6 +6,7 @@ from enum import Enum
 
 class TestKeys(Enum):
     """Holds application test definitions with description for UI display"""
+    REFLASH_UART_CHIP =         "Re-flash UART chip"
     CONN_TO_UART =              "Connect to UART"
     SCAN_SERIAL_NUM =           "Scan serial number"
     SCAN_TWO_DM_QR_CODES =      "Scan two data matrix QR codes"

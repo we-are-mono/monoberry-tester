@@ -38,10 +38,8 @@ def test_method(test_key):
     def decorator(func):
         @wraps(func)
         def wrapper(self, *args, **kwargs):
-            # Emit RUNNING state
             self.test_state_changed.emit(test_key, TestState.RUNNING)
 
-            # Create context object for callbacks to use
             class TestContext:
                 def succeed(ctx_self):
                     self.test_state_changed.emit(test_key, TestState.SUCCEEDED)
@@ -92,7 +90,10 @@ class Workflow(QObject):
         server_client: ServerClient,
         serial_controller: SerialController,
         process_runner: ProcessService,
-        process_controller: ProcessController
+        process_controller: ProcessController,
+        usb_service: UsbService,
+        ftx_prog_path: str,
+        ccs_tools_path: str
     ):
         super().__init__()
 
@@ -111,6 +112,9 @@ class Workflow(QObject):
         self.serial_controller  = serial_controller
         self.process_runner     = process_runner
         self.process_controller = process_controller
+        self.usb_service        = usb_service
+        self.ftx_prog_path      = ftx_prog_path
+        self.ccs_tools_path     = ccs_tools_path
 
         # Setup threads for services
         self.server_thread = QThread()
@@ -147,7 +151,51 @@ class Workflow(QObject):
             return
 
         self.__change_state(State.RUNNING, texts.STATUS_CONN_TO_UART)
-        self.connect_to_uart()
+        self.reflash_uart_chip()
+
+    @test_method(TestKeys.REFLASH_UART_CHIP)
+    def reflash_uart_chip(self, ctx):
+        def handle_process_output_received(text):
+            """Called when program outputs something to stdout"""
+            self.logger.info(text)
+
+        def handle_process_error_received(err_msg):
+            """Called when program outputs something to stderr"""
+            self.logger.error(err_msg)
+
+        def handle_process_errored(err_msg):
+            """Called when process errors out"""
+            self.logger.error(f"{texts.LOG_PROCESS_ERRORED} {err_msg}")
+            self.__change_state(State.FAILED, f"{texts.STATUS_PROCESS_ERRORED} {err_msg}")
+
+        def handle_process_finished(return_code):
+            """Called when process returns/exits"""
+            self.logger.info(f"{texts.LOG_PROCESS_EXITED} {return_code}")
+            if return_code == 0:
+                pass
+            else:
+                self.logger.error(texts.LOG_PROCESS_EXITED_NON_0_CODE)
+
+        def confirm_or_continue(result):
+            self.process_runner.output_received.disconnect(handle_process_output_received)
+            self.process_runner.error_received.disconnect(handle_process_error_received)
+            self.process_runner.process_errored.disconnect(handle_process_errored)
+            self.process_runner.process_finished.disconnect(handle_process_finished)
+
+            self.process_runner.stop()
+            self.usb_service.reset_usb(usb_id)
+            time.sleep(5)
+            ctx.succeed()
+            self.connect_to_uart()
+
+        self.process_runner.output_received.connect(handle_process_output_received)
+        self.process_runner.error_received.connect(handle_process_error_received)
+        self.process_runner.process_errored.connect(handle_process_errored)
+        self.process_runner.process_finished.connect(handle_process_finished)
+
+        usb_id = self.usb_service.get_usb_id(self.serial.port_name)
+        self.process_controller.wait_for_and_send("Continue? [y|n]:", "y\r\n", confirm_or_continue, timeout_s=2)
+        self.process_runner.start(self.ftx_prog_path, ["--cbus", "0", "TxRxLED"])
 
     @test_method(TestKeys.CONN_TO_UART)
     def connect_to_uart(self, ctx):
@@ -318,7 +366,7 @@ class Workflow(QObject):
         self.process_runner.process_finished.connect(handle_process_finished)
 
         self.process_controller.wait_for("lsbp.tcl is exiting...", handle_exiting, timeout_s=180)
-        self.process_runner.start("/home/rdme/CCS/bin/ccs", ["-nogfx", "-console", "-file", "/home/rdme/TAP/lsbp.tcl"])
+        self.process_runner.start(self.ccs_tools_path + "/CCS/bin/ccs", ["-nogfx", "-console", "-file", self.ccs_tools_path + "/TAP/lsbp.tcl"])
 
     @test_method(TestKeys.WAIT_FOR_UBOOT_SPL_PROMPT)
     def wait_for_uboot_spl(self, ctx):

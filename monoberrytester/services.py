@@ -8,9 +8,11 @@ TODO: replace with actual code when I get the barcode scanner
 from queue import Queue
 from datetime import datetime
 
+import time
 import urllib
 import logging
 import requests
+import pyudev
 
 from PyQt5.QtSerialPort import QSerialPort
 from PyQt5.QtCore import Qt, QObject, QProcess, pyqtSignal, QTimer
@@ -392,3 +394,32 @@ class ProcessController(BaseController):
                     self.process_service.write_to_process(send_text)
 
                 callback(True)
+
+class UsbService(QObject):
+    """Service to reset USB (UART) after the UART chip is reflashed"""
+    def __init__(self, usb_dev: str):
+        self.usb_dev = usb_dev
+
+    def reset_usb(self, usb_id):
+        unbind = "/sys/bus/usb/drivers/usb/unbind"
+        bind = "/sys/bus/usb/drivers/usb/bind"
+
+        with open(unbind, "w") as f:
+            f.write(usb_id)
+
+        time.sleep(1)
+
+        with open(bind, "w") as f:
+            f.write(usb_id)
+
+    def get_usb_id(self, device_path):
+        context = pyudev.Context()
+        device = pyudev.Devices.from_device_file(context, device_path)
+
+        for parent in device.ancestors:
+            if parent.subsystem == "usb" and parent.device_type == "usb_device":
+                name = parent.sys_name
+                if '.' in name:
+                    return name.rsplit('.', 1)[0]
+                return name
+        return None

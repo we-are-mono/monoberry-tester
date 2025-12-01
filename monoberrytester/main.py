@@ -33,7 +33,7 @@ class Main(QMainWindow):
         server_endpoint (str): Base url for our server endpoint
         serial_port (str): Path to device (TTY) on disk to connect to
     """
-    def __init__(self, server_endpoint, api_key, serial_port):
+    def __init__(self, server_endpoint, api_key, serial_port, ftx_prog_path, ccs_tools_path):
         super().__init__()
 
         # Init UI
@@ -49,6 +49,7 @@ class Main(QMainWindow):
         self.server_client      = ServerClient(server_endpoint, api_key, self.logger)
         self.process_runner     = ProcessService(self.logger)
         self.process_controller = ProcessController(self.process_runner)
+        self.usb_service        = UsbService(serial_port)
         self.workflow           = Workflow(
                                     self.logger,
                                     self.serial,
@@ -56,7 +57,10 @@ class Main(QMainWindow):
                                     self.server_client,
                                     self.serial_controller,
                                     self.process_runner,
-                                    self.process_controller
+                                    self.process_controller,
+                                    self.usb_service,
+                                    ftx_prog_path,
+                                    ccs_tools_path
                                 )
 
         self.logger.logline_received.connect(self.__update_logs_ui)
@@ -125,8 +129,10 @@ def main():
     server_endpoint = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000"
     api_key = sys.argv[2] if len(sys.argv) > 2 else "FAKE-API-KEY"
     serial_port = sys.argv[3] if len(sys.argv) > 3 else "/tmp/ttyMBT01"
+    ftx_prog_path = sys.argv[4] if len(sys.argv) > 4 else "~/.local/bin/ftx_prog"
+    ccs_tools_path = sys.argv[5] if len(sys.argv) > 5 else "/home/rdme"
 
-    window = Main(server_endpoint, api_key, serial_port)
+    window = Main(server_endpoint, api_key, serial_port, ftx_prog_path, ccs_tools_path)
     window.show()
     # window.showFullScreen()
     sys.exit(app.exec())
