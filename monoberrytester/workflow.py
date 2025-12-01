@@ -238,8 +238,6 @@ class Workflow(QObject):
             self.scan_qr_codes()
 
         self.current_test = TestKeys.SCAN_SERIAL_NUM
-        self.__change_state(State.RUNNING, texts.STATUS_SCAN_SERIAL_NUM)
-
         self.scanner.code_received.connect(handle_scanned_serial)
 
     @test_method(TestKeys.SCAN_TWO_DM_QR_CODES)
@@ -266,8 +264,6 @@ class Workflow(QObject):
                 ctx.fail()
 
         self.current_test = TestKeys.SCAN_TWO_DM_QR_CODES
-        self.__change_state(State.RUNNING, texts.STATUS_SCAN_QR_TOP)
-
         self.scanner.code_received.connect(handle_scanned_qr)
 
     @test_method(TestKeys.REGISTER_DEVICE)
@@ -307,8 +303,6 @@ class Workflow(QObject):
 
             ctx.fail()
             self.__change_state(State.FAILED, f"{texts.CONN_TO_SERVER_FAILED}")
-
-        self.__change_state(State.RUNNING, texts.STATUS_REGISTER_DEVICE)
 
         self.server_client.response_received.connect(handle_server_response)
         self.server_client.error_occured.connect(handle_server_error)
@@ -358,8 +352,6 @@ class Workflow(QObject):
             ctx.succeed()
             self.wait_for_uboot_spl()
 
-        self.__change_state(State.RUNNING, texts.STATUS_LOADING_UBOOT_SPL_VIA_JTAG)
-
         self.process_runner.output_received.connect(handle_process_output_received)
         self.process_runner.error_received.connect(handle_process_error_received)
         self.process_runner.process_errored.connect(handle_process_errored)
@@ -380,14 +372,11 @@ class Workflow(QObject):
             ctx.succeed()
             self.write_firmware_to_flash()
 
-        self.__change_state(State.RUNNING, texts.STATUS_WAITING_FOR_UBOOT_SPL_PROMPT)
         self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", callback, timeout_s=10)
 
     @test_method(TestKeys.WRITE_FIRMWARE_TO_FLASH)
     def write_firmware_to_flash(self, ctx):
         """Write firware to flash"""
-        self.__change_state(State.RUNNING, texts.STATUS_LOADING_QSPI_FIRMWARE_TO_MEM)
-
         def fail():
             ctx.fail()
             self.logger.info("Failed or timed out...")
