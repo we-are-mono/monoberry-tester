@@ -174,8 +174,15 @@ class SerialService(QObject):
                 idle_cycles = 0
                 buffer += bytes(self.serial_port.readAll()).decode('utf-8', errors='ignore')
 
-                while '\n' in buffer:
-                    line, buffer = buffer.split('\n', 1)
+                while '\n' in buffer or '\r' in buffer:
+                    if '\n' in buffer and '\r' in buffer:
+                        split_char = '\n' if buffer.index('\n') < buffer.index('\r') else '\r'
+                    elif '\n' in buffer:
+                        split_char = '\n'
+                    else:
+                        split_char = '\r'
+
+                    line, buffer = buffer.split(split_char, 1)
                     line = line.strip()
                     if line:
                         self.line_received.emit(line)
@@ -257,6 +264,8 @@ class SerialController(BaseController):
 
     def wait_for_and_send(self, wait_text, send_text, callback, timeout_s=10) -> bool:
         """Adds a text to wait for and text to send after in the waiting_list."""
+        import logging
+        logging.info(f"[SERIAL_CTRL] wait_for_and_send registered: waiting for '{wait_text}', will send {repr(send_text)}, timeout={timeout_s}s")
         wait_item = (wait_text, callback, send_text)
         self._add_to_waiting_list_with_timeout(wait_item, callback, timeout_s)
 
@@ -271,6 +280,7 @@ class SerialController(BaseController):
 
     def __on_line_received(self, line):
         """Handler for when data is received via serial"""
+        import logging
         for wait_item in self.waiting_list[:]:  # Iterate over copy to allow safe removal
             wait_text, callback, send_text = None, None, None
             if len(wait_item) == 2:
@@ -278,7 +288,9 @@ class SerialController(BaseController):
             else:
                 wait_text, callback, send_text = wait_item
 
+            logging.info(f"[SERIAL_CTRL] Checking if '{wait_text}' in '{line}' repr={repr(line)} (waiting_list_len={len(self.waiting_list)})")
             if wait_text in line:
+                logging.info(f"[SERIAL_CTRL] MATCHED! Sending: {repr(send_text)}")
                 self._remove_from_waiting_list_and_stop_timer(wait_item)
                 if send_text:
                     self.serial_service.send(send_text)
