@@ -38,13 +38,17 @@ def test_method(test_key):
     def decorator(func):
         @wraps(func)
         def wrapper(self, *args, **kwargs):
+            """Wraps the test function to add additional functionality and reduce repetitive code"""
             self.test_state_changed.emit(test_key, TestState.RUNNING)
 
             class TestContext:
+                """Makes it nicer to mark test as successful or failed"""
                 def succeed(ctx_self):
+                    """Mark test as successful"""
                     self.test_state_changed.emit(test_key, TestState.SUCCEEDED)
 
                 def fail(ctx_self):
+                    """Mark test as failed"""
                     self.test_state_changed.emit(test_key, TestState.FAILED)
 
             ctx = TestContext()
@@ -102,6 +106,7 @@ class Workflow(QObject):
         self.current_test   = None
         self.scanned_codes  = []
         self.mac_addresses  = []
+        self.mac_addr_hex_strings = []
         self.serial_num     = None
 
         # Services
@@ -134,7 +139,6 @@ class Workflow(QObject):
         self.current_test = None
         self.scanned_codes = []
         self.mac_addresses = []
-        self.mac_addr_hex_strings = []
         self.serial_num = None
         self.logger.reinit()
         self.serial.stop()
@@ -155,6 +159,7 @@ class Workflow(QObject):
 
     @test_method(TestKeys.REFLASH_UART_CHIP)
     def reflash_uart_chip(self, ctx):
+        """Reflash the UART pin to change the configuration"""
         def handle_process_output_received(text):
             """Called when program outputs something to stdout"""
             self.logger.info(text)
@@ -177,6 +182,8 @@ class Workflow(QObject):
                 self.logger.error(texts.LOG_PROCESS_EXITED_NON_0_CODE)
 
         def confirm_or_continue(result):
+            """Either confirm or continue anyways if there's not continue prompt"""
+            self.logger.info(f"Reflash UART confirm or continue: {result}")
             self.process_runner.output_received.disconnect(handle_process_output_received)
             self.process_runner.error_received.disconnect(handle_process_error_received)
             self.process_runner.process_errored.disconnect(handle_process_errored)
@@ -302,7 +309,7 @@ class Workflow(QObject):
             self.server_thread.wait()
 
             ctx.fail()
-            self.__change_state(State.FAILED, f"{texts.CONN_TO_SERVER_FAILED}")
+            self.__change_state(State.FAILED, f"{texts.CONN_TO_SERVER_FAILED}:\n{err_msg}")
 
         self.server_client.response_received.connect(handle_server_response)
         self.server_client.error_occured.connect(handle_server_error)
@@ -377,36 +384,47 @@ class Workflow(QObject):
     @test_method(TestKeys.WRITE_FIRMWARE_TO_FLASH)
     def write_firmware_to_flash(self, ctx):
         """Write firware to flash"""
-        def fail():
-            ctx.fail()
-            self.logger.info("Failed or timed out...")
-
         def start_usb():
             self.logger.info("Starting USB")
             self.serial_controller.send_and_expect("usb start\r\n", "Storage Device(s) found", load_firmware_to_mem, timeout_s=10)
 
         def load_firmware_to_mem(result):
-            if result is False: fail(); return
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
             self.logger.info("Loading QSPI firmware into memory")
             self.serial_controller.send_and_expect("ext4load usb 0:0 0xC0000000 firmware-qspi.bin\r\n", "bytes read in", flash_probe, timeout_s=30)
 
         def flash_probe(result):
-            if result is False: fail(); return
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
             self.logger.info("Probing the flash")
             self.serial_controller.send_and_expect("sf probe 0\r\n", "SF: Detected", flash_erase, timeout_s=10)
 
         def flash_erase(result):
-            if result is False: fail(); return
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
             self.logger.info("Erasing the flash")
             self.serial_controller.send_and_expect("sf erase 0x0 0x2000000\r\n", "Erased: OK", flash_write, timeout_s=120)
 
         def flash_write(result):
-            if result is False: fail(); return
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
             self.logger.info("Writing QSPI firmware to flash")
             self.serial_controller.send_and_expect("sf write 0xC0000000 0x0 ${filesize}\r\n", "Written: OK", flash_finished, timeout_s=120)
 
         def flash_finished(result):
-            if result is False: fail(); return
+            if result is False:
+                ctx.fail()
+                self.logger.info("Failed or timed out...")
+                return
             ctx.succeed()
             self.wait_for_uboot_prompt()
 
@@ -511,6 +529,7 @@ class Workflow(QObject):
 
     @test_method(TestKeys.BOOT_TO_RECOVERY_LINUX)
     def boot_to_recovery_linux(self, ctx):
+        """Boots into recovery linux to make following setup easier with linux tools"""
         def autoboot_stopped(result):
             if result is False:
                 ctx.fail()
@@ -534,10 +553,11 @@ class Workflow(QObject):
             self.partition_emmc()
 
         self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", autoboot_stopped, timeout_s=60)
-        
+
 
     @test_method(TestKeys.PARTITION_EMMC)
     def partition_emmc(self, ctx):
+        """Make eMMC partitions"""
         def partitioning_done(result):
             if result is False:
                 ctx.fail()
@@ -566,6 +586,7 @@ class Workflow(QObject):
 
     @test_method(TestKeys.MOUNT_USB_DRIVE)
     def mount_usb_drive(self, ctx):
+        """Mount USB stick where files are"""
         def mounting_done(result):
             if result is False:
                 ctx.fail()
@@ -579,6 +600,7 @@ class Workflow(QObject):
 
     @test_method(TestKeys.WRITE_IMAGE_TO_EMMC)
     def write_image_to_emmc(self, ctx):
+        """Write image to eMMC partition"""
         def dd_done(result):
             if result is False:
                 ctx.fail()
@@ -599,6 +621,7 @@ class Workflow(QObject):
 
     @test_method(TestKeys.BOOT_TO_OPENWRT)
     def boot_to_openwrt(self, ctx):
+        """Reboot and wait for OpenWRT prompt"""
         def openwrt_ready(result):
             if result is False:
                 ctx.fail()

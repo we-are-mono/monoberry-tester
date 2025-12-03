@@ -101,6 +101,7 @@ class ServerClient(QObject):
         self.qr2 = codes[1]
 
     def send_qrs(self):
+        """Send QR codes to the server to register the device and get MACs"""
         self.__config_request("POST", f"/api/devices/{self.serial}/register?api_key={self.api_key}", {"qr1": self.qr1, "qr2": self.qr2})
 
     def run(self):
@@ -194,7 +195,6 @@ class SerialService(QObject):
                         self.serial_port.flush()
                         self.serial_port.waitForBytesWritten(100)
                 else:
-                    bytes_written = self.serial_port.write(data_bytes)
                     self.serial_port.flush()
 
         self.serial_port.close()
@@ -401,6 +401,7 @@ class UsbService(QObject):
         self.usb_dev = usb_dev
 
     def reset_usb(self, usb_id):
+        """Reset USB - needed after UART chip is reflashed for changes to take effect"""
         unbind = "/sys/bus/usb/drivers/usb/unbind"
         bind = "/sys/bus/usb/drivers/usb/bind"
 
@@ -413,6 +414,7 @@ class UsbService(QObject):
             f.write(usb_id)
 
     def get_usb_id(self, device_path):
+        """Get USB id in order to be able to reset it"""
         context = pyudev.Context()
         device = pyudev.Devices.from_device_file(context, device_path)
 
