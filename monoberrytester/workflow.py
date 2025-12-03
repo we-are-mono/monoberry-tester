@@ -160,6 +160,9 @@ class Workflow(QObject):
     @test_method(TestKeys.REFLASH_UART_CHIP)
     def reflash_uart_chip(self, ctx):
         """Reflash the UART pin to change the configuration"""
+        # Track if we've already completed to avoid running finish steps twice
+        completed = [False]
+
         def handle_process_output_received(text):
             """Called when program outputs something to stdout"""
             self.logger.info(text)
@@ -181,19 +184,38 @@ class Workflow(QObject):
             else:
                 self.logger.error(texts.LOG_PROCESS_EXITED_NON_0_CODE)
 
-        def confirm_or_continue(result):
-            """Either confirm or continue anyways if there's not continue prompt"""
-            self.logger.info(f"Reflash UART confirm or continue: {result}")
+        def disconnect_signals():
+            """Disconnects all process runner signals"""
             self.process_runner.output_received.disconnect(handle_process_output_received)
             self.process_runner.error_received.disconnect(handle_process_error_received)
             self.process_runner.process_errored.disconnect(handle_process_errored)
             self.process_runner.process_finished.disconnect(handle_process_finished)
 
+        def finish_and_continue():
+            """Finishes the reflash process and continues to next step"""
             self.process_runner.stop()
             self.usb_service.reset_usb(usb_id)
             time.sleep(5)
             ctx.succeed()
             self.connect_to_uart()
+
+        def confirm(result):
+            """Handles confirmation prompt"""
+            self.logger.info(f"Reflash UART confirm: {result}")
+
+            if not completed[0]:
+                completed[0] = True
+                disconnect_signals()
+                finish_and_continue()
+
+        def no_changes(result):
+            """Handles no changes scenario when eeprom contents match"""
+            self.logger.info(f"Reflash UART no changes: {result}")
+
+            if not completed[0]:
+                completed[0] = True
+                disconnect_signals()
+                finish_and_continue()
 
         self.process_runner.output_received.connect(handle_process_output_received)
         self.process_runner.error_received.connect(handle_process_error_received)
@@ -201,7 +223,8 @@ class Workflow(QObject):
         self.process_runner.process_finished.connect(handle_process_finished)
 
         usb_id = self.usb_service.get_usb_id(self.serial.port_name)
-        self.process_controller.wait_for_and_send("Continue? [y|n]:", "y\r\n", confirm_or_continue, timeout_s=2)
+        self.process_controller.wait_for_and_send("Continue? [y|n]:", "y\r\n", confirm, timeout_s=2)
+        self.process_controller.wait_for("No change from existing eeprom contents", no_changes, timeout_s=2)
         self.process_runner.start(self.ftx_prog_path, ["--cbus", "0", "TxRxLED"])
 
     @test_method(TestKeys.CONN_TO_UART)
