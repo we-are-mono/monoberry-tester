@@ -32,8 +32,8 @@ def test_method(test_key):
             def handle_success():
                 ctx.succeed()
 
-            def handle_failure():
-                ctx.fail()
+            def handle_failure(err_msg):
+                ctx.fail(f"{texts.STATUS_CONN_TO_UART_FAILED}: {err_msg}")
     """
     def decorator(func):
         @wraps(func)
@@ -47,9 +47,12 @@ def test_method(test_key):
                     """Mark test as successful"""
                     self.test_state_changed.emit(test_key, TestState.SUCCEEDED)
 
-                def fail(ctx_self):
-                    """Mark test as failed"""
+                def fail(ctx_self, message=""):
+                    """Mark test as failed and update workflow state"""
                     self.test_state_changed.emit(test_key, TestState.FAILED)
+                    if self.state != State.FAILED:
+                        failure_msg = message if message else f"Test failed: {test_key.name}"
+                        self._Workflow__change_state(State.FAILED, failure_msg)
 
             ctx = TestContext()
             return func(self, ctx, *args, **kwargs)
@@ -135,10 +138,11 @@ class Workflow(QObject):
 
     def reset(self):
         """Resets back to idle state in order to do retry upon failure"""
-        self.logger.info("--- Reseting ---")
+        self.logger.info("--- Resetting ---")
         self.current_test = None
         self.scanned_codes = []
         self.mac_addresses = []
+        self.mac_addr_hex_strings = []
         self.serial_num = None
         self.logger.reinit()
         self.serial.stop()
@@ -174,7 +178,7 @@ class Workflow(QObject):
         def handle_process_errored(err_msg):
             """Called when process errors out"""
             self.logger.error(f"{texts.LOG_PROCESS_ERRORED} {err_msg}")
-            self.__change_state(State.FAILED, f"{texts.STATUS_PROCESS_ERRORED} {err_msg}")
+            ctx.fail(f"{texts.STATUS_PROCESS_ERRORED}")
 
         def handle_process_finished(return_code):
             """Called when process returns/exits"""
@@ -246,8 +250,7 @@ class Workflow(QObject):
             self.serial.error_occurred.disconnect(handle_serial_error_occurred)
 
             self.logger.error(f"{texts.LOG_ERROR_UART_FAILED} {err_msg}")
-            self.__change_state(State.FAILED, f"{texts.STATUS_CONN_TO_UART_FAILED} {err_msg}")
-            ctx.fail()
+            ctx.fail(f"{texts.STATUS_CONN_TO_UART_FAILED}")
 
         self.serial.connected.connect(handle_serial_connected)
         self.serial.error_occurred.connect(handle_serial_error_occurred)
@@ -291,7 +294,7 @@ class Workflow(QObject):
                 self.scanner.code_received.disconnect(handle_scanned_qr)
 
                 self.logger.error(texts.LOG_ERROR_MORE_THAN_2_QR_SCANNED)
-                ctx.fail()
+                ctx.fail(texts.ERROR_MORE_THAN_2_QR_SCANNED)
 
         self.current_test = TestKeys.SCAN_TWO_DM_QR_CODES
         self.scanner.code_received.connect(handle_scanned_qr)
@@ -321,7 +324,7 @@ class Workflow(QObject):
                 self.load_uboot_spl_via_jtag()
             else:
                 self.logger.error(f"{texts.LOG_INFO_SERVER_ERROR} {response}")
-                ctx.fail()
+                ctx.fail(f"{texts.ERROR_SERVER_ERROR}: {response}")
 
         def handle_server_error(err_msg):
             """Called upon server connection error"""
@@ -331,8 +334,7 @@ class Workflow(QObject):
             self.server_thread.quit()
             self.server_thread.wait()
 
-            ctx.fail()
-            self.__change_state(State.FAILED, f"{texts.CONN_TO_SERVER_FAILED}:\n{err_msg}")
+            ctx.fail(f"{texts.CONN_TO_SERVER_FAILED}:\n{err_msg}")
 
         self.server_client.response_received.connect(handle_server_response)
         self.server_client.error_occured.connect(handle_server_error)
@@ -357,7 +359,7 @@ class Workflow(QObject):
         def handle_process_errored(err_msg):
             """Called when process errors out"""
             self.logger.error(f"{texts.LOG_PROCESS_ERRORED} {err_msg}")
-            self.__change_state(State.FAILED, f"{texts.STATUS_PROCESS_ERRORED} {err_msg}")
+            ctx.fail(f"{texts.STATUS_PROCESS_ERRORED} {err_msg}")
 
         def handle_process_finished(return_code):
             """Called when process returns/exits"""
@@ -369,8 +371,8 @@ class Workflow(QObject):
 
         def handle_exiting(result):
             if result is False:
-                ctx.fail()
                 self.logger.info("Failed or timed out waiting for lsbp.tcl to exit...")
+                ctx.fail(texts.ERROR_TIMEOUT_LSBP_TCL)
                 return
 
             self.process_runner.output_received.disconnect(handle_process_output_received)
@@ -396,8 +398,8 @@ class Workflow(QObject):
 
         def callback(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out waiting for U-Boot SPL prompt...")
+                ctx.fail(texts.ERROR_TIMEOUT_UBOOT_SPL_PROMPT)
                 return
             ctx.succeed()
             self.write_firmware_to_flash()
@@ -413,40 +415,40 @@ class Workflow(QObject):
 
         def load_firmware_to_mem(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out starting USB...")
+                ctx.fail(texts.ERROR_FAILED_START_USB)
                 return
             self.logger.info("Loading QSPI firmware into memory")
             self.serial_controller.send_and_expect("ext4load usb 0:0 0xC0000000 firmware-qspi.bin\r\n", "bytes read in", flash_probe, timeout_s=30)
 
         def flash_probe(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out loading firmware to memory...")
+                ctx.fail(texts.ERROR_FAILED_LOAD_FIRMWARE_TO_MEM)
                 return
             self.logger.info("Probing the flash")
             self.serial_controller.send_and_expect("sf probe 0\r\n", "SF: Detected", flash_erase, timeout_s=10)
 
         def flash_erase(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out probing flash...")
+                ctx.fail(texts.ERROR_FAILED_PROBE_FLASH)
                 return
             self.logger.info("Erasing the flash")
             self.serial_controller.send_and_expect("sf erase 0x0 0x2000000\r\n", "Erased: OK", flash_write, timeout_s=120)
 
         def flash_write(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out erasing flash...")
+                ctx.fail(texts.ERROR_FAILED_ERASE_FLASH)
                 return
             self.logger.info("Writing QSPI firmware to flash")
             self.serial_controller.send_and_expect("sf write 0xC0000000 0x0 ${filesize}\r\n", "Written: OK", flash_finished, timeout_s=120)
 
         def flash_finished(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out writing firmware to flash...")
+                ctx.fail(texts.ERROR_FAILED_WRITE_FIRMWARE_TO_FLASH)
                 return
             ctx.succeed()
             self.wait_for_uboot_prompt()
@@ -459,15 +461,15 @@ class Workflow(QObject):
 
         def after_reset(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out waiting for reset...")
+                ctx.fail(texts.ERROR_FAILED_RESET_DEVICE)
                 return
             self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", uboot_prompt_received, timeout_s=60)
 
         def uboot_prompt_received(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out waiting for U-Boot prompt...")
+                ctx.fail(texts.ERROR_TIMEOUT_UBOOT_PROMPT)
                 return
             ctx.succeed()
             self.set_time_in_uboot()
@@ -480,15 +482,15 @@ class Workflow(QObject):
 
         def prompt_received(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out waiting for U-Boot prompt...")
+                ctx.fail(texts.ERROR_TIMEOUT_UBOOT_PROMPT)
                 return
             self.serial_controller.send_and_expect("date " + t + "\r\n", "Date:", time_set, timeout_s=30)
 
         def time_set(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out setting time...")
+                ctx.fail(texts.ERROR_FAILED_SET_TIME)
                 return
             ctx.succeed()
             self.program_eeprom()
@@ -502,23 +504,23 @@ class Workflow(QObject):
         """Program EEPROM with serial number and MACs"""
         def prompt_received(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out waiting for U-Boot prompt...")
+                ctx.fail(texts.ERROR_TIMEOUT_UBOOT_PROMPT)
                 return
             time.sleep(1)
             self.serial_controller.send_and_expect("mw 2320000 80000080; mw 2320008 40098033; i2c dev 3\r\n", "Setting bus to 3", bus_set)
 
         def bus_set(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out setting I2C bus...")
+                ctx.fail(texts.ERROR_FAILED_SET_I2C_BUS)
                 return
             self.serial_controller.send_and_expect("i2c mw 0x50 0x0000.2 0x00\r\n", "=>", eeprom_erased)
 
         def eeprom_erased(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out erasing EEPROM...")
+                ctx.fail(texts.ERROR_FAILED_ERASE_EEPROM)
                 return
             self.serial_controller.send_and_expect(
                 f"program_eeprom \"Mono Gateway Development Kit\" \"{self.serial_num}\" {self.mac_addr_hex_strings[0]}\r\n",
@@ -528,8 +530,8 @@ class Workflow(QObject):
 
         def eeprom_programmed(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out programming EEPROM...")
+                ctx.fail(texts.ERROR_FAILED_PROGRAM_EEPROM)
                 return
             ctx.succeed()
             self.wait_for_self_tests()
@@ -542,8 +544,8 @@ class Workflow(QObject):
 
         def self_tests_check(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out waiting for self tests...")
+                ctx.fail(texts.ERROR_SELF_TESTS_FAILED)
                 return
             ctx.succeed()
             self.boot_to_recovery_linux()
@@ -555,22 +557,22 @@ class Workflow(QObject):
         """Boots into recovery linux to make following setup easier with linux tools"""
         def autoboot_stopped(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out stopping autoboot...")
+                ctx.fail(texts.ERROR_FAILED_STOP_AUTOBOOT)
                 return
             self.serial_controller.wait_for_and_send("=>", "run recovery\r\n", do_login, timeout_s=60)
 
         def do_login(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out running recovery command...")
+                ctx.fail(texts.ERROR_FAILED_RUN_RECOVERY)
                 return
             self.serial_controller.wait_for_and_send("recovery login:", "root\r\n", booting_done, timeout_s=60)
 
         def booting_done(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out logging into recovery...")
+                ctx.fail(texts.ERROR_FAILED_LOGIN_RECOVERY)
                 return
             ctx.succeed()
             self.partition_emmc()
@@ -583,23 +585,23 @@ class Workflow(QObject):
         """Make eMMC partitions"""
         def partitioning_done(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out creating partitions...")
+                ctx.fail(texts.ERROR_FAILED_PARTITION_EMMC)
                 return
             cmd = "mkfs.ext4 /dev/mmcblk0p1 -F\r\n"
             self.serial_controller.send_and_expect(cmd, "Writing superblocks and filesystem accounting information", wait_for_done, timeout_s=120)
 
         def wait_for_done(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out creating filesystem...")
+                ctx.fail(texts.ERROR_FAILED_CREATE_FILESYSTEM)
                 return
             self.serial_controller.wait_for("done", filesystem_done)
 
         def filesystem_done(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out waiting for filesystem creation to complete...")
+                ctx.fail(texts.ERROR_FILESYSTEM_CREATION_INCOMPLETE)
                 return
             ctx.succeed()
             self.mount_usb_drive()
@@ -612,8 +614,8 @@ class Workflow(QObject):
         """Mount USB stick where files are"""
         def mounting_done(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out mounting USB drive...")
+                ctx.fail(texts.ERROR_FAILED_MOUNT_USB)
                 return
             ctx.succeed()
             self.write_image_to_emmc()
@@ -626,15 +628,15 @@ class Workflow(QObject):
         """Write image to eMMC partition"""
         def dd_done(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out writing image to eMMC...")
+                ctx.fail(texts.ERROR_FAILED_WRITE_IMAGE_TO_EMMC)
                 return
             self.serial_controller.send_and_expect("echo $?\r\n", "0", dd_successful)
 
         def dd_successful(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("dd command failed with non-zero exit code...")
+                ctx.fail(texts.ERROR_DD_COMMAND_FAILED)
                 return
             ctx.succeed()
             self.boot_to_openwrt()
@@ -647,16 +649,16 @@ class Workflow(QObject):
         """Reboot and wait for OpenWRT prompt"""
         def openwrt_ready(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out waiting for OpenWrt to boot...")
+                ctx.fail(texts.ERROR_FAILED_BOOT_OPENWRT)
                 return
             time.sleep(2)
             self.serial_controller.send_and_expect("\r\n", "root@OpenWrt:~#", openwrt_prompt_received)
 
         def openwrt_prompt_received(result):
             if result is False:
-                ctx.fail()
-                self.logger.info("Failed or timed out...")
+                self.logger.info("Failed or timed out waiting for OpenWrt prompt...")
+                ctx.fail(texts.ERROR_FAILED_GET_OPENWRT_PROMPT)
                 return
             ctx.succeed()
             self.done()
