@@ -21,6 +21,7 @@ import sys
 from PyQt5.QtWidgets import QApplication, QMainWindow
 
 import texts
+import styles
 from ui import UI
 from workflow import State, Workflow
 from services import *
@@ -125,6 +126,7 @@ class Main(QMainWindow):
 def main():
     """App entrypoint"""
     app = QApplication(sys.argv)
+    app.setStyleSheet(styles.DARK_MODE)
 
     server_endpoint = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000"
     api_key = sys.argv[2] if len(sys.argv) > 2 else "FAKE-API-KEY"
