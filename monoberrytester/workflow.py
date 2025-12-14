@@ -33,7 +33,7 @@ def test_method(test_key):
                 ctx.succeed()
 
             def handle_failure(err_msg):
-                ctx.fail(f"{texts.STATUS_CONN_TO_UART_FAILED}: {err_msg}")
+                ctx.fail(f"{texts.STATUS_CONN_TO_UART_FAILED}")
     """
     def decorator(func):
         @wraps(func)
@@ -324,7 +324,7 @@ class Workflow(QObject):
                 self.load_uboot_spl_via_jtag()
             else:
                 self.logger.error(f"{texts.LOG_INFO_SERVER_ERROR} {response}")
-                ctx.fail(f"{texts.ERROR_SERVER_ERROR}: {response}")
+                ctx.fail(f"{texts.ERROR_SERVER_ERROR}")
 
         def handle_server_error(err_msg):
             """Called upon server connection error"""
@@ -334,7 +334,7 @@ class Workflow(QObject):
             self.server_thread.quit()
             self.server_thread.wait()
 
-            ctx.fail(f"{texts.CONN_TO_SERVER_FAILED}:\n{err_msg}")
+            ctx.fail(f"{texts.CONN_TO_SERVER_FAILED}")
 
         self.server_client.response_received.connect(handle_server_response)
         self.server_client.error_occured.connect(handle_server_error)
@@ -359,7 +359,7 @@ class Workflow(QObject):
         def handle_process_errored(err_msg):
             """Called when process errors out"""
             self.logger.error(f"{texts.LOG_PROCESS_ERRORED} {err_msg}")
-            ctx.fail(f"{texts.STATUS_PROCESS_ERRORED} {err_msg}")
+            ctx.fail(f"{texts.STATUS_PROCESS_ERRORED}")
 
         def handle_process_finished(return_code):
             """Called when process returns/exits"""
