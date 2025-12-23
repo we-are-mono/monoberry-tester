@@ -606,6 +606,7 @@ class Workflow(QObject):
             ctx.succeed()
             self.mount_usb_drive()
 
+        time.sleep(5)
         cmd = "parted /dev/mmcblk0 mklabel gpt -s && parted /dev/mmcblk0 mkpart primary ext4 32MiB 100% -s\r\n"
         self.serial_controller.send_and_expect(cmd, "root@recovery:~#", partitioning_done)
 

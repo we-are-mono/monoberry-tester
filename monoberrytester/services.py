@@ -44,7 +44,7 @@ class LoggingService(QObject):
 
     def __init_logging(self):
         time_str = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
-        filename = f"/tmp/mbt-{time_str}.log"
+        filename = f"/var/log/mbt-{time_str}.log"
 
         logger = logging.getLogger()
 
