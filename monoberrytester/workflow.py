@@ -419,7 +419,7 @@ class Workflow(QObject):
                 ctx.fail(texts.ERROR_FAILED_START_USB)
                 return
             self.logger.info("Loading QSPI firmware into memory")
-            self.serial_controller.send_and_expect("ext4load usb 0:0 0xC0000000 firmware-qspi.bin\r\n", "bytes read in", flash_probe, timeout_s=30)
+            self.serial_controller.send_and_expect("ext4load usb 0:0 0xC0000000 firmware-qspi.bin\r\n", "bytes read in", flash_probe, timeout_s=40)
 
         def flash_probe(result):
             if result is False:
