@@ -542,13 +542,40 @@ class Workflow(QObject):
     def wait_for_self_tests(self, ctx):
         """Waits for self tests PASS output"""
 
+        # Track if RTC warning is detected
+        rtc_warning_detected = [False]
+
+        def check_for_rtc_warning(line):
+            """Temporary handler to check each line for RTC warning"""
+            if "### Warning: RTC Low Voltage" in line:
+                rtc_warning_detected[0] = True
+                # Disconnect immediately and fail
+                self.serial.line_received.disconnect(check_for_rtc_warning)
+                self.logger.error("RTC Low Voltage warning detected during self tests")
+                ctx.fail(texts.ERROR_RTC_LOW_VOLTAGE)
+
         def self_tests_check(result):
+            # Disconnect the RTC warning handler
+            try:
+                self.serial.line_received.disconnect(check_for_rtc_warning)
+            except TypeError:
+                pass  # Already disconnected
+
             if result is False:
                 self.logger.info("Failed or timed out waiting for self tests...")
                 ctx.fail(texts.ERROR_SELF_TESTS_FAILED)
                 return
+
+            # Double-check flag in case warning came after PASS
+            if rtc_warning_detected[0]:
+                ctx.fail(texts.ERROR_RTC_LOW_VOLTAGE)
+                return
+
             ctx.succeed()
             self.boot_to_recovery_linux()
+
+        # Connect temporary handler to check all lines
+        self.serial.line_received.connect(check_for_rtc_warning)
 
         self.serial_controller.send_and_expect("reset\r\n", "On-board devices self test: PASS", self_tests_check, timeout_s=60)
 
