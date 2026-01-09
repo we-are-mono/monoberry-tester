@@ -200,6 +200,17 @@ class Workflow(QObject):
             self.process_runner.stop()
             self.usb_service.reset_usb(usb_id)
             time.sleep(5)
+
+            # Update serial port to first available device
+            new_port = self.usb_service.find_first_available_tty()
+            if new_port:
+                self.logger.info(f"Found available serial port: {new_port}")
+                self.serial.port_name = new_port
+            else:
+                self.logger.error("No USB serial port found")
+                ctx.fail("No USB serial port available")
+                return
+
             ctx.succeed()
             self.connect_to_uart()
 
@@ -220,6 +231,18 @@ class Workflow(QObject):
                 completed[0] = True
                 disconnect_signals()
                 finish_and_continue()
+
+        # Find first available ttyUSB device
+        available_port = self.usb_service.find_first_available_tty()
+        if not available_port:
+            self.logger.error("No USB serial port found")
+            ctx.fail("No USB serial port available")
+            return
+
+        # Update serial port if different from current
+        if self.serial.port_name != available_port:
+            self.logger.info(f"Updating serial port from {self.serial.port_name} to {available_port}")
+            self.serial.port_name = available_port
 
         self.process_runner.output_received.connect(handle_process_output_received)
         self.process_runner.error_received.connect(handle_process_error_received)

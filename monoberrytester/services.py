@@ -426,3 +426,15 @@ class UsbService(QObject):
                     return name.rsplit('.', 1)[0]
                 return name
         return None
+
+    @staticmethod
+    def find_first_available_tty():
+        """Find the first available /dev/ttyUSB* device"""
+        import glob
+        import os
+
+        tty_devices = sorted(glob.glob('/dev/ttyUSB*'))
+        for device in tty_devices:
+            if os.path.exists(device):
+                return device
+        return None
