@@ -432,9 +432,36 @@ class Workflow(QObject):
     @test_method(TestKeys.WRITE_FIRMWARE_TO_FLASH)
     def write_firmware_to_flash(self, ctx):
         """Write firware to flash"""
+        # Track whether USB start has been handled
+        usb_handled = [False]
+
         def start_usb():
             self.logger.info("Starting USB")
-            self.serial_controller.send_and_expect("usb start\r\n", "Storage Device(s) found", load_firmware_to_mem, timeout_s=10)
+            # Wait for both success (1 or more devices) and failure (0 devices) in parallel
+            self.serial_controller.wait_for("1 Storage Device(s) found", usb_started_success, timeout_s=10)
+            self.serial_controller.wait_for("0 Storage Device(s) found", usb_started_failure, timeout_s=10)
+            self.serial_controller.send("usb start\r\n")
+
+        def usb_started_success(result):
+            if not usb_handled[0] and result:
+                usb_handled[0] = True
+                self.logger.info("USB started successfully")
+                load_firmware_to_mem(True)
+
+        def usb_started_failure(result):
+            if not usb_handled[0] and result:
+                usb_handled[0] = True
+                self.logger.info("USB start failed with 0 Storage Devices, attempting to restart...")
+                # Run usb stop then usb start again
+                self.serial_controller.send_and_expect("usb stop\r\n", "=>", usb_stopped, timeout_s=10)
+
+        def usb_stopped(result):
+            if result is False:
+                self.logger.info("Failed or timed out stopping USB...")
+                ctx.fail(texts.ERROR_FAILED_START_USB)
+                return
+            self.logger.info("USB stopped, restarting...")
+            self.serial_controller.send_and_expect("usb start\r\n", "1 Storage Device(s) found", load_firmware_to_mem, timeout_s=10)
 
         def load_firmware_to_mem(result):
             if result is False:
