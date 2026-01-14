@@ -730,7 +730,7 @@ class Workflow(QObject):
                 self.logger.info("Failed or timed out waiting for OpenWrt to boot...")
                 ctx.fail(texts.ERROR_FAILED_BOOT_OPENWRT)
                 return
-            time.sleep(2)
+            time.sleep(5)
             self.serial_controller.send_and_expect("\r\n", "root@OpenWrt:~#", openwrt_prompt_received)
 
         def openwrt_prompt_received(result):
@@ -739,9 +739,291 @@ class Workflow(QObject):
                 ctx.fail(texts.ERROR_FAILED_GET_OPENWRT_PROMPT)
                 return
             ctx.succeed()
-            self.done()
+            self.test_network_config()
 
         self.serial_controller.send_and_expect("reboot\r\n", "kmodloader: done loading kernel modules from /etc/modules.d/*", openwrt_ready, timeout_s=60)
+
+    @test_method(TestKeys.TEST_NETWORK_CONFIG)
+    def test_network_config(self, ctx):
+        """Test network configuration by applying test config and pinging gateways"""
+
+        # Hardcoded network configuration
+        network_config = """config interface 'loopback'
+\toption device 'lo'
+\toption proto 'static'
+\toption ipaddr '127.0.0.1'
+\toption netmask '255.0.0.0'
+
+config interface 'eth0'
+\toption device 'eth0'
+\toption proto 'static'
+\toption ipaddr '10.0.2.2'
+\toption netmask '255.255.255.0'
+
+config interface 'eth1'
+\toption device 'eth1'
+\toption proto 'static'
+\toption ipaddr '10.0.5.2'
+\toption netmask '255.255.255.0'
+
+config interface 'eth2'
+\toption device 'eth2'
+\toption proto 'static'
+\toption ipaddr '10.0.6.2'
+\toption netmask '255.255.255.0'
+
+config interface 'eth3'
+\toption device 'eth3'
+\toption proto 'static'
+\toption ipaddr '10.0.9.2'
+\toption netmask '255.255.255.0'
+
+config interface 'eth4'
+\toption device 'eth4'
+\toption proto 'static'
+\toption ipaddr '10.0.10.2'
+\toption netmask '255.255.255.0'
+"""
+
+        # Interface and gateway pairs to test (interface, gateway)
+        interface_gateways = [
+            ("eth0", "10.0.2.1"),
+            ("eth1", "10.0.5.1"),
+            ("eth2", "10.0.6.1"),
+            ("eth3", "10.0.9.1"),
+            ("eth4", "10.0.10.1"),
+        ]
+
+        # Track the error to report after restore completes
+        failure_error = [None]
+
+        def write_new_config(result):
+            if result is False:
+                self.logger.info("Failed to backup network config...")
+                ctx.fail(texts.ERROR_FAILED_BACKUP_NETWORK_CONFIG)
+                return
+            self.logger.info("Writing new network configuration...")
+            # Use cat with heredoc to write the configuration
+            cmd = f"cat > /etc/config/network << 'EOF'\n{network_config}EOF\r\n"
+            self.serial_controller.send_and_expect(
+                cmd,
+                "root@OpenWrt:~#",
+                self.__check_exit_code(
+                    on_success=run_uci_commit,
+                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_WRITE_NETWORK_CONFIG)
+                ),
+                timeout_s=10
+            )
+
+        def run_uci_commit(result):
+            if result is False:
+                self.logger.info("Failed to write network config...")
+                ctx.fail(texts.ERROR_FAILED_WRITE_NETWORK_CONFIG)
+                return
+            self.logger.info("Running uci commit...")
+            self.serial_controller.send_and_expect(
+                "uci commit\r\n",
+                "root@OpenWrt:~#",
+                self.__check_exit_code(
+                    on_success=restart_network,
+                    on_failure=lambda r: (
+                        failure_error.__setitem__(0, texts.ERROR_FAILED_UCI_COMMIT),
+                        restore_config_on_failure(True)
+                    )[1]
+                ),
+                timeout_s=10
+            )
+
+        def restart_network(result):
+            if result is False:
+                self.logger.info("uci commit failed...")
+                failure_error[0] = texts.ERROR_FAILED_UCI_COMMIT
+                restore_config_on_failure(True)
+                return
+            self.logger.info("Restarting network service...")
+            self.serial_controller.send_and_expect(
+                "service network restart\r\n",
+                "root@OpenWrt:~#",
+                self.__check_exit_code(
+                    on_success=lambda r: start_ping_tests(r, 0),
+                    on_failure=lambda r: (
+                        failure_error.__setitem__(0, texts.ERROR_FAILED_RESTART_NETWORK),
+                        restore_config_on_failure(True)
+                    )[1]
+                ),
+                timeout_s=30
+            )
+
+        def start_ping_tests(result, index):
+            if result is False:
+                self.logger.info("Network restart failed...")
+                failure_error[0] = texts.ERROR_FAILED_RESTART_NETWORK
+                restore_config_on_failure(True)
+                return
+
+            # Wait for interfaces to come up before first ping
+            if index == 0:
+                self.logger.info("Waiting 10s for interfaces to come up...")
+                time.sleep(10)
+
+            if index >= len(interface_gateways):
+                # All pings successful, restore config and apply it
+                restore_config_on_success(True)
+                return
+
+            interface, gateway = interface_gateways[index]
+            self.logger.info(f"Pinging gateway {gateway} via {interface}...")
+            self.serial_controller.send_and_expect(
+                f"ping -c 3 -W 2 -I {interface} {gateway}\r\n",
+                "root@OpenWrt:~#",
+                self.__check_exit_code(
+                    on_success=lambda r: ping_success(r, index),
+                    on_failure=lambda r: (
+                        self.logger.info(f"Failed to ping gateway {gateway} via {interface}..."),
+                        failure_error.__setitem__(0, texts.ERROR_FAILED_PING_GATEWAY),
+                        restore_config_on_failure(True)
+                    )[2]
+                ),
+                timeout_s=15
+            )
+
+        def ping_success(result, index):
+            if result is False:
+                interface, gateway = interface_gateways[index]
+                self.logger.info(f"Ping to {gateway} via {interface} failed...")
+                failure_error[0] = texts.ERROR_FAILED_PING_GATEWAY
+                restore_config_on_failure(True)
+                return
+            interface, gateway = interface_gateways[index]
+            self.logger.info(f"Successfully pinged {gateway} via {interface}")
+            # Proceed to the next ping test
+            start_ping_tests(True, index + 1)
+
+        def restore_config_on_failure(result):
+            """Restore config after test failure - includes uci commit and service restart"""
+            if result is False:
+                self.logger.info("Failed to get prompt for restore after failure...")
+                ctx.fail(texts.ERROR_FAILED_RESTORE_NETWORK_CONFIG)
+                return
+            self.logger.info("Test failed - restoring original network configuration...")
+            self.serial_controller.send_and_expect(
+                "mv /etc/config/network.backup /etc/config/network\r\n",
+                "root@OpenWrt:~#",
+                self.__check_exit_code(
+                    on_success=uci_commit_after_restore_failure,
+                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_RESTORE_NETWORK_CONFIG)
+                ),
+                timeout_s=10
+            )
+
+        def uci_commit_after_restore_failure(result):
+            if result is False:
+                self.logger.info("Failed to restore network config file...")
+                ctx.fail(texts.ERROR_FAILED_RESTORE_NETWORK_CONFIG)
+                return
+            self.logger.info("Running uci commit to apply restored config...")
+            self.serial_controller.send_and_expect(
+                "uci commit\r\n",
+                "root@OpenWrt:~#",
+                self.__check_exit_code(
+                    on_success=restart_after_restore_failure,
+                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_UCI_COMMIT)
+                ),
+                timeout_s=10
+            )
+
+        def restart_after_restore_failure(result):
+            if result is False:
+                self.logger.info("uci commit failed after restore...")
+                ctx.fail(texts.ERROR_FAILED_UCI_COMMIT)
+                return
+            self.logger.info("Restarting network service to apply restored config...")
+            self.serial_controller.send_and_expect(
+                "service network restart\r\n",
+                "root@OpenWrt:~#",
+                self.__check_exit_code(
+                    on_success=restore_failure_complete,
+                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_RESTART_NETWORK)
+                ),
+                timeout_s=30
+            )
+
+        def restore_failure_complete(result):
+            if result is False:
+                self.logger.info("Network restart failed after restore...")
+                ctx.fail(texts.ERROR_FAILED_RESTART_NETWORK)
+                return
+            self.logger.info("Original config restored after test failure")
+            # Report the original error that caused the test to fail
+            ctx.fail(failure_error[0] if failure_error[0] else texts.ERROR_FAILED_PING_GATEWAY)
+
+        def restore_config_on_success(result):
+            """Restore config after successful tests - includes uci commit and service restart"""
+            if result is False:
+                self.logger.info("Failed to get prompt after ping tests...")
+                ctx.fail(texts.ERROR_FAILED_RESTORE_NETWORK_CONFIG)
+                return
+            self.logger.info("All pings successful - restoring original network configuration...")
+            self.serial_controller.send_and_expect(
+                "mv /etc/config/network.backup /etc/config/network\r\n",
+                "root@OpenWrt:~#",
+                self.__check_exit_code(
+                    on_success=uci_commit_after_restore_success,
+                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_RESTORE_NETWORK_CONFIG)
+                ),
+                timeout_s=10
+            )
+
+        def uci_commit_after_restore_success(result):
+            if result is False:
+                self.logger.info("Failed to restore network config file...")
+                ctx.fail(texts.ERROR_FAILED_RESTORE_NETWORK_CONFIG)
+                return
+            self.logger.info("Running uci commit to apply restored config...")
+            self.serial_controller.send_and_expect(
+                "uci commit\r\n",
+                "root@OpenWrt:~#",
+                self.__check_exit_code(
+                    on_success=restart_after_restore_success,
+                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_UCI_COMMIT)
+                ),
+                timeout_s=10
+            )
+
+        def restart_after_restore_success(result):
+            if result is False:
+                self.logger.info("uci commit failed after restore...")
+                ctx.fail(texts.ERROR_FAILED_UCI_COMMIT)
+                return
+            self.logger.info("Restarting network service to apply restored config...")
+            self.serial_controller.send_and_expect(
+                "service network restart\r\n",
+                "root@OpenWrt:~#",
+                self.__check_exit_code(
+                    on_success=test_complete,
+                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_RESTART_NETWORK)
+                ),
+                timeout_s=30
+            )
+
+        def test_complete(result):
+            if result is False:
+                self.logger.info("Network restart after restore failed...")
+                ctx.fail(texts.ERROR_FAILED_RESTART_NETWORK)
+                return
+            self.logger.info("Network configuration test completed successfully")
+            ctx.succeed()
+            self.done()
+
+        self.serial_controller.send_and_expect(
+            "cp /etc/config/network /etc/config/network.backup\r\n",
+            "root@OpenWrt:~#",
+            self.__check_exit_code(
+                on_success=write_new_config,
+                on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_BACKUP_NETWORK_CONFIG)
+            ),
+            timeout_s=10
+        )
 
     def done(self):
         """Done, all tests have successfully passed and the board is
@@ -763,3 +1045,30 @@ class Workflow(QObject):
     def __log_serial(self, data: str):
         """Persistent handler for logging all serial data"""
         self.logger.info(data, False)
+
+    def __check_exit_code(self, on_success, on_failure, timeout_s=10):
+        """Helper to check command exit code and call appropriate callback.
+
+        Args:
+            on_success: Callback to call if exit code is 0 (receives True)
+            on_failure: Callback to call if exit code is non-zero or timeout (receives False)
+            timeout_s: Timeout in seconds for the exit code check
+
+        Returns:
+            A callback function that can be used with send_and_expect
+        """
+        def check_exit_code(result):
+            if result is False:
+                # Timeout waiting for prompt
+                on_failure(False)
+                return
+            # Got prompt, now check exit code
+            # Use unique EXITCODE: marker to avoid false matches with "0" in
+            # other output like IP addresses (10.0.2.1) or ping stats (0 packets)
+            self.serial_controller.send_and_expect(
+                "echo EXITCODE:$?\r\n",
+                "EXITCODE:0",
+                lambda r: on_success(r) if r else on_failure(False),
+                timeout_s=timeout_s
+            )
+        return check_exit_code

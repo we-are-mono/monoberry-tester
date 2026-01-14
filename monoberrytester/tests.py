@@ -23,6 +23,7 @@ class TestKeys(Enum):
     MOUNT_USB_DRIVE =           "Mount USB drive"
     WRITE_IMAGE_TO_EMMC =       "Write image to eMMC"
     BOOT_TO_OPENWRT =           "Boot to OpenWRT"
+    TEST_NETWORK_CONFIG =       "Test network configuration"
 
     @property
     def description(self):
