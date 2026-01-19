@@ -412,7 +412,7 @@ class Workflow(QObject):
         self.process_runner.process_errored.connect(handle_process_errored)
         self.process_runner.process_finished.connect(handle_process_finished)
 
-        self.process_controller.wait_for("lsbp.tcl is exiting...", handle_exiting, timeout_s=180)
+        self.process_controller.wait_for("lsbp.tcl is exiting...", handle_exiting, timeout_s=360)
         self.process_runner.start(self.ccs_tools_path + "/CCS/bin/ccs", ["-nogfx", "-console", "-file", self.ccs_tools_path + "/TAP/lsbp.tcl"])
 
     @test_method(TestKeys.WAIT_FOR_UBOOT_SPL_PROMPT)
@@ -427,7 +427,7 @@ class Workflow(QObject):
             ctx.succeed()
             self.write_firmware_to_flash()
 
-        self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", callback, timeout_s=10)
+        self.serial_controller.wait_for_and_send("stop autoboot", "\r\n", callback, timeout_s=30)
 
     @test_method(TestKeys.WRITE_FIRMWARE_TO_FLASH)
     def write_firmware_to_flash(self, ctx):
@@ -469,7 +469,7 @@ class Workflow(QObject):
                 ctx.fail(texts.ERROR_FAILED_START_USB)
                 return
             self.logger.info("Loading QSPI firmware into memory")
-            self.serial_controller.send_and_expect("ext4load usb 0:0 0xC0000000 firmware-qspi.bin\r\n", "bytes read in", flash_probe, timeout_s=40)
+            self.serial_controller.send_and_expect("ext4load usb 0:0 0xC0000000 firmware-qspi.bin\r\n", "bytes read in", flash_probe, timeout_s=60)
 
         def flash_probe(result):
             if result is False:
@@ -485,7 +485,7 @@ class Workflow(QObject):
                 ctx.fail(texts.ERROR_FAILED_PROBE_FLASH)
                 return
             self.logger.info("Erasing the flash")
-            self.serial_controller.send_and_expect("sf erase 0x0 0x2000000\r\n", "Erased: OK", flash_write, timeout_s=120)
+            self.serial_controller.send_and_expect("sf erase 0x0 0x2000000\r\n", "Erased: OK", flash_write, timeout_s=180)
 
         def flash_write(result):
             if result is False:
@@ -493,7 +493,7 @@ class Workflow(QObject):
                 ctx.fail(texts.ERROR_FAILED_ERASE_FLASH)
                 return
             self.logger.info("Writing QSPI firmware to flash")
-            self.serial_controller.send_and_expect("sf write 0xC0000000 0x0 ${filesize}\r\n", "Written: OK", flash_finished, timeout_s=120)
+            self.serial_controller.send_and_expect("sf write 0xC0000000 0x0 ${filesize}\r\n", "Written: OK", flash_finished, timeout_s=180)
 
         def flash_finished(result):
             if result is False:
@@ -871,6 +871,7 @@ config interface 'eth4'
                 restore_config_on_success(True)
                 return
 
+            time.sleep(5)
             interface, gateway = interface_gateways[index]
             self.logger.info(f"Pinging gateway {gateway} via {interface}...")
             self.serial_controller.send_and_expect(
