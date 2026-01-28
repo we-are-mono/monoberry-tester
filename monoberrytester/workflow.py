@@ -1110,6 +1110,17 @@ config interface 'eth4'
                     on_failure(False)
                     return
 
+                # Skip the echoed command line - we want the output line, not "echo EXITCODE:$?"
+                # The echoed command contains "$?" literally, while the output has the actual number
+                if "echo" in line.lower() or "$?" in line:
+                    # This is the echoed command, wait for the actual output
+                    self.serial_controller.wait_for_with_capture(
+                        "EXITCODE:",
+                        parse_exit_code,
+                        timeout_s=timeout_s
+                    )
+                    return
+
                 # Parse the exit code from line like "EXITCODE:0" or "EXITCODE:1"
                 try:
                     # Find EXITCODE: and extract the number after it

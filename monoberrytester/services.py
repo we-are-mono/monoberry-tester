@@ -285,6 +285,17 @@ class SerialController(BaseController):
 
         return True
 
+    def wait_for_with_capture(self, expect_text, callback, timeout_s=10):
+        """Waits for expected text without sending, passing matched line to callback.
+
+        Unlike wait_for which passes True/False to callback, this method passes
+        the actual matched line on success, or False on timeout.
+        """
+        wait_item = (expect_text, callback, None, True)  # True = capture mode
+        self._add_to_waiting_list_with_timeout(wait_item, callback, timeout_s)
+
+        return True
+
     def __on_line_received(self, line):
         """Handler for when data is received via serial"""
         for wait_item in self.waiting_list[:]:  # Iterate over copy to allow safe removal
