@@ -810,7 +810,8 @@ config interface 'eth4'
                 "root@OpenWrt:~#",
                 self.__check_exit_code(
                     on_success=write_new_config,
-                    on_failure=on_backup_failure
+                    on_failure=on_backup_failure,
+                    settle_delay_ms=5000
                 ),
                 timeout_s=10
             )
@@ -843,7 +844,8 @@ config interface 'eth4'
                 "root@OpenWrt:~#",
                 self.__check_exit_code(
                     on_success=run_uci_commit,
-                    on_failure=on_write_failure
+                    on_failure=on_write_failure,
+                    settle_delay_ms=5000
                 ),
                 timeout_s=10
             )
@@ -873,7 +875,8 @@ config interface 'eth4'
                     on_failure=lambda r: (
                         failure_error.__setitem__(0, texts.ERROR_FAILED_UCI_COMMIT),
                         restore_config_on_failure(True)
-                    )[1]
+                    )[1],
+                    settle_delay_ms=5000
                 ),
                 timeout_s=10
             )
@@ -894,7 +897,7 @@ config interface 'eth4'
                         failure_error.__setitem__(0, texts.ERROR_FAILED_RESTART_NETWORK),
                         restore_config_on_failure(True)
                     )[1],
-                    settle_delay_ms=2000  # Longer delay - kernel messages flood during network restart
+                    settle_delay_ms=5000  # Longer delay - kernel messages flood during network restart
                 ),
                 timeout_s=30
             )
@@ -928,7 +931,8 @@ config interface 'eth4'
                         self.logger.info(f"Failed to ping gateway {gateway} via {interface}..."),
                         failure_error.__setitem__(0, texts.ERROR_FAILED_PING_GATEWAY),
                         restore_config_on_failure(True)
-                    )[2]
+                    )[2],
+                    settle_delay_ms=5000
                 ),
                 timeout_s=15
             )
@@ -957,7 +961,8 @@ config interface 'eth4'
                 "root@OpenWrt:~#",
                 self.__check_exit_code(
                     on_success=uci_commit_after_restore_failure,
-                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_RESTORE_NETWORK_CONFIG)
+                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_RESTORE_NETWORK_CONFIG),
+                    settle_delay_ms=5000
                 ),
                 timeout_s=10
             )
@@ -973,7 +978,8 @@ config interface 'eth4'
                 "root@OpenWrt:~#",
                 self.__check_exit_code(
                     on_success=restart_after_restore_failure,
-                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_UCI_COMMIT)
+                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_UCI_COMMIT),
+                    settle_delay_ms=5000
                 ),
                 timeout_s=10
             )
@@ -990,7 +996,7 @@ config interface 'eth4'
                 self.__check_exit_code(
                     on_success=restore_failure_complete,
                     on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_RESTART_NETWORK),
-                    settle_delay_ms=2000  # Longer delay - kernel messages flood during network restart
+                    settle_delay_ms=5000  # Longer delay - kernel messages flood during network restart
                 ),
                 timeout_s=30
             )
@@ -1016,7 +1022,8 @@ config interface 'eth4'
                 "root@OpenWrt:~#",
                 self.__check_exit_code(
                     on_success=uci_commit_after_restore_success,
-                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_RESTORE_NETWORK_CONFIG)
+                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_RESTORE_NETWORK_CONFIG),
+                    settle_delay_ms=5000
                 ),
                 timeout_s=10
             )
@@ -1032,7 +1039,8 @@ config interface 'eth4'
                 "root@OpenWrt:~#",
                 self.__check_exit_code(
                     on_success=restart_after_restore_success,
-                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_UCI_COMMIT)
+                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_UCI_COMMIT),
+                    settle_delay_ms=5000
                 ),
                 timeout_s=10
             )
@@ -1049,7 +1057,7 @@ config interface 'eth4'
                 self.__check_exit_code(
                     on_success=test_complete,
                     on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_RESTART_NETWORK),
-                    settle_delay_ms=2000  # Longer delay - kernel messages flood during network restart
+                    settle_delay_ms=5000  # Longer delay - kernel messages flood during network restart
                 ),
                 timeout_s=30
             )
@@ -1168,8 +1176,27 @@ config interface 'eth4'
                     timeout_s=timeout_s
                 )
 
+            def get_clean_prompt_then_check(result):
+                # After noisy commands, the prompt may be buried in output
+                # Now that we have a clean prompt, send the exit code check
+                if result is False:
+                    self.logger.info("Timeout waiting for clean prompt")
+                    on_failure(False)
+                    return
+                send_exit_code_check()
+
+            def send_enter_for_clean_prompt():
+                # Send Enter to get a clean prompt line after noisy commands
+                # This ensures we have a clear prompt before checking exit code
+                self.serial_controller.send_and_expect(
+                    "\r\n",
+                    "root@OpenWrt:~#",
+                    get_clean_prompt_then_check,
+                    timeout_s=timeout_s
+                )
+
             # Got prompt, add delay before checking exit code to allow
             # serial buffer to settle and shell to fully process the command
             # Use longer delay for commands that produce lots of output (like network restart)
-            QTimer.singleShot(settle_delay_ms, send_exit_code_check)
+            QTimer.singleShot(settle_delay_ms, send_enter_for_clean_prompt)
         return check_exit_code
