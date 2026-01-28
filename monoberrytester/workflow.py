@@ -893,7 +893,8 @@ config interface 'eth4'
                     on_failure=lambda r: (
                         failure_error.__setitem__(0, texts.ERROR_FAILED_RESTART_NETWORK),
                         restore_config_on_failure(True)
-                    )[1]
+                    )[1],
+                    settle_delay_ms=2000  # Longer delay - kernel messages flood during network restart
                 ),
                 timeout_s=30
             )
@@ -988,7 +989,8 @@ config interface 'eth4'
                 "root@OpenWrt:~#",
                 self.__check_exit_code(
                     on_success=restore_failure_complete,
-                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_RESTART_NETWORK)
+                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_RESTART_NETWORK),
+                    settle_delay_ms=2000  # Longer delay - kernel messages flood during network restart
                 ),
                 timeout_s=30
             )
@@ -1046,7 +1048,8 @@ config interface 'eth4'
                 "root@OpenWrt:~#",
                 self.__check_exit_code(
                     on_success=test_complete,
-                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_RESTART_NETWORK)
+                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_RESTART_NETWORK),
+                    settle_delay_ms=2000  # Longer delay - kernel messages flood during network restart
                 ),
                 timeout_s=30
             )
@@ -1084,17 +1087,22 @@ config interface 'eth4'
         """Persistent handler for logging all serial data"""
         self.logger.info(data, False)
 
-    def __check_exit_code(self, on_success, on_failure, timeout_s=10):
+    def __check_exit_code(self, on_success, on_failure, timeout_s=10, settle_delay_ms=100):
         """Helper to check command exit code and call appropriate callback.
 
         Args:
             on_success: Callback to call if exit code is 0 (receives True)
             on_failure: Callback to call if exit code is non-zero or timeout (receives False)
             timeout_s: Timeout in seconds for the exit code check
+            settle_delay_ms: Delay in ms before checking exit code (increase for noisy commands)
 
         Returns:
             A callback function that can be used with send_and_expect
         """
+        # Use unique markers that won't appear in kernel logs
+        MARKER_PREFIX = "###EC:"
+        MARKER_SUFFIX = "###"
+
         def check_exit_code(result):
             if result is False:
                 # Timeout waiting for prompt
@@ -1105,53 +1113,63 @@ config interface 'eth4'
             def parse_exit_code(line):
                 """Parse exit code from captured line and call appropriate callback."""
                 if line is False:
-                    # Timeout waiting for EXITCODE: response
+                    # Timeout waiting for exit code response
                     self.logger.info("Timeout waiting for exit code response")
                     on_failure(False)
                     return
 
-                # Skip the echoed command line - we want the output line, not "echo EXITCODE:$?"
+                # Skip the echoed command line - we want the output line
                 # The echoed command contains "$?" literally, while the output has the actual number
-                if "echo" in line.lower() or "$?" in line:
+                if "$?" in line:
                     # This is the echoed command, wait for the actual output
                     self.serial_controller.wait_for_with_capture(
-                        "EXITCODE:",
+                        MARKER_PREFIX,
                         parse_exit_code,
                         timeout_s=timeout_s
                     )
                     return
 
-                # Parse the exit code from line like "EXITCODE:0" or "EXITCODE:1"
+                # Parse the exit code from line like "###EC:0###" or "###EC:1###"
                 try:
-                    # Find EXITCODE: and extract the number after it
-                    marker = "EXITCODE:"
-                    idx = line.find(marker)
+                    # Find marker and extract the number
+                    idx = line.find(MARKER_PREFIX)
                     if idx != -1:
-                        code_str = line[idx + len(marker):].split()[0]
-                        exit_code = int(code_str)
-                        if exit_code == 0:
-                            on_success(True)
+                        after_prefix = line[idx + len(MARKER_PREFIX):]
+                        # Extract digits until we hit the suffix or non-digit
+                        code_str = ""
+                        for ch in after_prefix:
+                            if ch.isdigit():
+                                code_str += ch
+                            else:
+                                break
+                        if code_str:
+                            exit_code = int(code_str)
+                            if exit_code == 0:
+                                on_success(True)
+                            else:
+                                self.logger.info(f"Command failed with exit code: {exit_code}")
+                                on_failure(False)
                         else:
-                            self.logger.info(f"Command failed with exit code: {exit_code}")
+                            self.logger.info(f"No digits found after marker in: {line}")
                             on_failure(False)
                     else:
-                        self.logger.info(f"Could not find EXITCODE marker in: {line}")
+                        self.logger.info(f"Could not find exit code marker in: {line}")
                         on_failure(False)
                 except (ValueError, IndexError) as e:
                     self.logger.info(f"Failed to parse exit code from '{line}': {e}")
                     on_failure(False)
 
             def send_exit_code_check():
-                # Use unique EXITCODE: marker to avoid false matches with "0" in
-                # other output like IP addresses (10.0.2.1) or ping stats (0 packets)
+                # Use unique markers unlikely to appear in kernel logs
                 self.serial_controller.send_and_expect_with_capture(
-                    "echo EXITCODE:$?\r\n",
-                    "EXITCODE:",
+                    f'echo "{MARKER_PREFIX}$?{MARKER_SUFFIX}"\r\n',
+                    MARKER_PREFIX,
                     parse_exit_code,
                     timeout_s=timeout_s
                 )
 
-            # Got prompt, add small delay before checking exit code to allow
+            # Got prompt, add delay before checking exit code to allow
             # serial buffer to settle and shell to fully process the command
-            QTimer.singleShot(100, send_exit_code_check)
+            # Use longer delay for commands that produce lots of output (like network restart)
+            QTimer.singleShot(settle_delay_ms, send_exit_code_check)
         return check_exit_code
