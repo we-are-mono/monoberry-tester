@@ -897,7 +897,7 @@ config interface 'eth4'
                         failure_error.__setitem__(0, texts.ERROR_FAILED_RESTART_NETWORK),
                         restore_config_on_failure(True)
                     )[1],
-                    settle_delay_ms=5000  # Longer delay - kernel messages flood during network restart
+                    settle_delay_ms=10000  # Longer delay - kernel messages flood during network restart
                 ),
                 timeout_s=30
             )
@@ -996,7 +996,7 @@ config interface 'eth4'
                 self.__check_exit_code(
                     on_success=restore_failure_complete,
                     on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_RESTART_NETWORK),
-                    settle_delay_ms=5000  # Longer delay - kernel messages flood during network restart
+                    settle_delay_ms=10000  # Longer delay - kernel messages flood during network restart
                 ),
                 timeout_s=30
             )
@@ -1057,7 +1057,7 @@ config interface 'eth4'
                 self.__check_exit_code(
                     on_success=test_complete,
                     on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_RESTART_NETWORK),
-                    settle_delay_ms=5000  # Longer delay - kernel messages flood during network restart
+                    settle_delay_ms=10000  # Longer delay - kernel messages flood during network restart
                 ),
                 timeout_s=30
             )
