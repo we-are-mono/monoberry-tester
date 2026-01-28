@@ -170,7 +170,7 @@ class SerialService(QObject):
         idle_cycles = 0
 
         while self.is_running:
-            if self.serial_port.waitForReadyRead(10):
+            if self.serial_port.waitForReadyRead(1):
                 idle_cycles = 0
                 buffer += bytes(self.serial_port.readAll()).decode('utf-8', errors='ignore')
 
