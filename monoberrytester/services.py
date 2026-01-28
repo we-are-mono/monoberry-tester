@@ -181,7 +181,9 @@ class SerialService(QObject):
                         self.line_received.emit(line)
             else:
                 idle_cycles += 1
-                if buffer.strip() and idle_cycles >= 10:
+                # Wait for 20 idle cycles (200ms) before emitting partial buffer
+                # This helps with prompt detection when no trailing newline is present
+                if buffer.strip() and idle_cycles >= 20:
                     self.line_received.emit(buffer.strip())
                     buffer = ""
 
@@ -265,7 +267,20 @@ class SerialController(BaseController):
         """Sends command to serial and waits for expected text with timeout."""
         self.serial_service.send(send_text, slow=slow)
 
-        wait_item = (expect_text, callback)
+        wait_item = (expect_text, callback, None, False)
+        self._add_to_waiting_list_with_timeout(wait_item, callback, timeout_s)
+
+        return True
+
+    def send_and_expect_with_capture(self, send_text, expect_text, callback, timeout_s=10, slow=False):
+        """Sends command to serial and waits for expected text, passing matched line to callback.
+
+        Unlike send_and_expect which passes True/False to callback, this method passes
+        the actual matched line on success, or False on timeout.
+        """
+        self.serial_service.send(send_text, slow=slow)
+
+        wait_item = (expect_text, callback, None, True)  # True = capture mode
         self._add_to_waiting_list_with_timeout(wait_item, callback, timeout_s)
 
         return True
@@ -273,18 +288,23 @@ class SerialController(BaseController):
     def __on_line_received(self, line):
         """Handler for when data is received via serial"""
         for wait_item in self.waiting_list[:]:  # Iterate over copy to allow safe removal
-            wait_text, callback, send_text = None, None, None
+            wait_text, callback, send_text, capture = None, None, None, False
             if len(wait_item) == 2:
                 wait_text, callback = wait_item
-            else:
+            elif len(wait_item) == 3:
                 wait_text, callback, send_text = wait_item
+            else:
+                wait_text, callback, send_text, capture = wait_item
 
             if wait_text in line:
                 self._remove_from_waiting_list_and_stop_timer(wait_item)
                 if send_text:
                     self.serial_service.send(send_text)
 
-                callback(True)
+                if capture:
+                    callback(line)  # Pass the matched line
+                else:
+                    callback(True)
 
 class ProcessService(QObject):
     """Service for running, reading from and writing to processes"""

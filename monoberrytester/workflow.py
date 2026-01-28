@@ -9,7 +9,7 @@ import json
 from datetime import datetime
 from enum import Enum, auto
 from functools import wraps
-from PyQt5.QtCore import QObject, QThread, pyqtSignal
+from PyQt5.QtCore import QObject, QThread, pyqtSignal, QTimer
 
 import texts
 from ui import TestState
@@ -797,12 +797,45 @@ config interface 'eth4'
         # Track the error to report after restore completes
         failure_error = [None]
 
+        # Retry counters
+        MAX_RETRIES = 3
+        backup_retries = [0]
+        write_retries = [0]
+
+        def do_backup():
+            """Execute the backup command with retry support."""
+            self.logger.info(f"Backing up network config (attempt {backup_retries[0] + 1}/{MAX_RETRIES})...")
+            self.serial_controller.send_and_expect(
+                "cp /etc/config/network /etc/config/network.backup\r\n",
+                "root@OpenWrt:~#",
+                self.__check_exit_code(
+                    on_success=write_new_config,
+                    on_failure=on_backup_failure
+                ),
+                timeout_s=10
+            )
+
+        def on_backup_failure(result):
+            """Handle backup failure with retry logic."""
+            backup_retries[0] += 1
+            if backup_retries[0] < MAX_RETRIES:
+                self.logger.info(f"Backup failed, retrying ({backup_retries[0]}/{MAX_RETRIES})...")
+                # Wait a bit before retrying
+                QTimer.singleShot(500, do_backup)
+            else:
+                self.logger.info(f"Backup failed after {MAX_RETRIES} attempts")
+                ctx.fail(texts.ERROR_FAILED_BACKUP_NETWORK_CONFIG)
+
         def write_new_config(result):
             if result is False:
                 self.logger.info("Failed to backup network config...")
                 ctx.fail(texts.ERROR_FAILED_BACKUP_NETWORK_CONFIG)
                 return
-            self.logger.info("Writing new network configuration...")
+            do_write_config()
+
+        def do_write_config():
+            """Execute the write config command with retry support."""
+            self.logger.info(f"Writing new network configuration (attempt {write_retries[0] + 1}/{MAX_RETRIES})...")
             # Use cat with heredoc to write the configuration
             cmd = f"cat > /etc/config/network << 'EOF'\n{network_config}EOF\r\n"
             self.serial_controller.send_and_expect(
@@ -810,10 +843,21 @@ config interface 'eth4'
                 "root@OpenWrt:~#",
                 self.__check_exit_code(
                     on_success=run_uci_commit,
-                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_WRITE_NETWORK_CONFIG)
+                    on_failure=on_write_failure
                 ),
                 timeout_s=10
             )
+
+        def on_write_failure(result):
+            """Handle write config failure with retry logic."""
+            write_retries[0] += 1
+            if write_retries[0] < MAX_RETRIES:
+                self.logger.info(f"Write config failed, retrying ({write_retries[0]}/{MAX_RETRIES})...")
+                # Wait a bit before retrying
+                QTimer.singleShot(500, do_write_config)
+            else:
+                self.logger.info(f"Write config failed after {MAX_RETRIES} attempts")
+                ctx.fail(texts.ERROR_FAILED_WRITE_NETWORK_CONFIG)
 
         def run_uci_commit(result):
             if result is False:
@@ -1016,15 +1060,8 @@ config interface 'eth4'
             ctx.succeed()
             self.done()
 
-        self.serial_controller.send_and_expect(
-            "cp /etc/config/network /etc/config/network.backup\r\n",
-            "root@OpenWrt:~#",
-            self.__check_exit_code(
-                on_success=write_new_config,
-                on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_BACKUP_NETWORK_CONFIG)
-            ),
-            timeout_s=10
-        )
+        # Start the backup process (with retry support)
+        do_backup()
 
     def done(self):
         """Done, all tests have successfully passed and the board is
@@ -1061,15 +1098,49 @@ config interface 'eth4'
         def check_exit_code(result):
             if result is False:
                 # Timeout waiting for prompt
+                self.logger.info("Timeout waiting for prompt")
                 on_failure(False)
                 return
-            # Got prompt, now check exit code
-            # Use unique EXITCODE: marker to avoid false matches with "0" in
-            # other output like IP addresses (10.0.2.1) or ping stats (0 packets)
-            self.serial_controller.send_and_expect(
-                "echo EXITCODE:$?\r\n",
-                "EXITCODE:0",
-                lambda r: on_success(r) if r else on_failure(False),
-                timeout_s=timeout_s
-            )
+
+            def parse_exit_code(line):
+                """Parse exit code from captured line and call appropriate callback."""
+                if line is False:
+                    # Timeout waiting for EXITCODE: response
+                    self.logger.info("Timeout waiting for exit code response")
+                    on_failure(False)
+                    return
+
+                # Parse the exit code from line like "EXITCODE:0" or "EXITCODE:1"
+                try:
+                    # Find EXITCODE: and extract the number after it
+                    marker = "EXITCODE:"
+                    idx = line.find(marker)
+                    if idx != -1:
+                        code_str = line[idx + len(marker):].split()[0]
+                        exit_code = int(code_str)
+                        if exit_code == 0:
+                            on_success(True)
+                        else:
+                            self.logger.info(f"Command failed with exit code: {exit_code}")
+                            on_failure(False)
+                    else:
+                        self.logger.info(f"Could not find EXITCODE marker in: {line}")
+                        on_failure(False)
+                except (ValueError, IndexError) as e:
+                    self.logger.info(f"Failed to parse exit code from '{line}': {e}")
+                    on_failure(False)
+
+            def send_exit_code_check():
+                # Use unique EXITCODE: marker to avoid false matches with "0" in
+                # other output like IP addresses (10.0.2.1) or ping stats (0 packets)
+                self.serial_controller.send_and_expect_with_capture(
+                    "echo EXITCODE:$?\r\n",
+                    "EXITCODE:",
+                    parse_exit_code,
+                    timeout_s=timeout_s
+                )
+
+            # Got prompt, add small delay before checking exit code to allow
+            # serial buffer to settle and shell to fully process the command
+            QTimer.singleShot(100, send_exit_code_check)
         return check_exit_code
