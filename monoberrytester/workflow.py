@@ -576,6 +576,7 @@ class Workflow(QObject):
                 f"program_eeprom \"Mono Gateway Development Kit\" \"{self.serial_num}\" {self.mac_addr_hex_strings[0]}\r\n",
                 "EEPROM programming successful!",
                 eeprom_programmed,
+                timeout_s=30,
                 slow=True)
 
         def eeprom_programmed(result):
