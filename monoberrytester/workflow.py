@@ -802,6 +802,7 @@ config interface 'eth4'
         MAX_RETRIES = 3
         backup_retries = [0]
         write_retries = [0]
+        restart_after_restore_retries = [0]
 
         def do_backup():
             """Execute the backup command with retry support."""
@@ -1051,17 +1052,33 @@ config interface 'eth4'
                 self.logger.info("uci commit failed after restore...")
                 ctx.fail(texts.ERROR_FAILED_UCI_COMMIT)
                 return
-            self.logger.info("Restarting network service to apply restored config...")
+            do_restart_after_restore()
+
+        def do_restart_after_restore():
+            """Execute network restart after restore with retry support."""
+            self.logger.info(f"Restarting network service to apply restored config (attempt {restart_after_restore_retries[0] + 1}/{MAX_RETRIES})...")
             self.serial_controller.send_and_expect(
                 "service network restart\r\n",
                 "root@OpenWrt:~#",
                 self.__check_exit_code(
                     on_success=test_complete,
-                    on_failure=lambda r: ctx.fail(texts.ERROR_FAILED_RESTART_NETWORK),
+                    on_failure=on_restart_after_restore_failure,
+                    timeout_s=30,  # Match outer timeout for inner exit code checking
                     settle_delay_ms=10000  # Longer delay - kernel messages flood during network restart
                 ),
                 timeout_s=30
             )
+
+        def on_restart_after_restore_failure(result):
+            """Handle network restart failure with retry logic."""
+            restart_after_restore_retries[0] += 1
+            if restart_after_restore_retries[0] < MAX_RETRIES:
+                self.logger.info(f"Network restart after restore failed, retrying ({restart_after_restore_retries[0]}/{MAX_RETRIES})...")
+                # Wait a bit before retrying
+                QTimer.singleShot(2000, do_restart_after_restore)
+            else:
+                self.logger.info(f"Network restart after restore failed after {MAX_RETRIES} attempts")
+                ctx.fail(texts.ERROR_FAILED_RESTART_NETWORK)
 
         def test_complete(result):
             if result is False:
